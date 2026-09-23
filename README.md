@@ -160,6 +160,13 @@ imediato · timeout de sessão 8h · indicador visível no PC
 para desligar e para substituir ficheiros · allow-list de apps ·
 mensagens de erro PT sem detalhes técnicos (sem sockets/exceções na UI).
 
+> **HTTP local (cleartext):** a app fala `http://`/`ws://` com o servidor
+> na rede local indicada pelo utilizador, por isso o manifest declara
+> `usesCleartextTraffic="true"` (sem isto, o Android 9+ bloqueia tudo
+> com "CLEARTEXT not permitted", mesmo com a rede OK). A app só contacta
+> o host do pairing — nunca terceiros. TLS com certificado próprio fica
+> para a v2.
+
 ## 4. Erros que a app mostra (e o que fazer)
 
 | Mensagem | Causa provável | Ação |

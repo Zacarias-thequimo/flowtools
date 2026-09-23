@@ -82,6 +82,10 @@ class PairingViewModel : ViewModel() {
     }
 
     fun onManual(pairingId: String, code: String, host: String) {
+        if (host.isBlank()) {
+            _state.value = PairUiState.Error("Insira o endereço do PC (ex. http://192.168.1.5:8787).")
+            return
+        }
         onScanned("flowtools://pair?id=$pairingId&code=$code&host=$host")
     }
 
@@ -96,6 +100,21 @@ class PairingViewModel : ViewModel() {
 
     fun retry() {
         _state.value = PairUiState.Idle
+    }
+
+    private val _testResult = MutableStateFlow<String?>(null)
+    val testResult: StateFlow<String?> = _testResult.asStateFlow()
+
+    /** Diagnóstico pedido pelo utilizador: GET /v1/health com erro legível. */
+    fun testConnection(host: String) {
+        _testResult.value = "A testar…"
+        viewModelScope.launch(Dispatchers.IO) {
+            _testResult.value = try {
+                com.flowtools.session.healthCheck(host)
+            } catch (e: Exception) {
+                com.flowtools.session.userMessageFor(e)
+            }
+        }
     }
 
     /** Claim the pairing, persist the session and report back for socket attach. */
@@ -130,8 +149,8 @@ class PairingViewModel : ViewModel() {
                 store.saveSession(invite.host, session.pc_id, session.pc_name, session.token)
                 _state.value = PairUiState.Done
                 onDone(invite.host, session.token)
-            } catch (_: Exception) {
-                _state.value = PairUiState.Error("O PC não está disponível. Verifique a ligação.")
+            } catch (e: Exception) {
+                _state.value = PairUiState.Error(com.flowtools.session.userMessageFor(e))
             }
         }
     }

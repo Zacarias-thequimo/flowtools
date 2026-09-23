@@ -89,7 +89,7 @@ class FilesViewModel : ViewModel() {
             c.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
                     _ui.value = if (call.isCanceled()) UploadUi(error = "Transferência cancelada.")
-                    else UploadUi(error = "O PC não está disponível. Verifique a ligação.")
+                    else UploadUi(error = com.flowtools.session.userMessageFor(e))
                 }
 
                 override fun onResponse(call: Call, response: Response) {

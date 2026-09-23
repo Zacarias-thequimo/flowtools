@@ -114,9 +114,10 @@ fun PairingFlow(
     val state by vm.state.collectAsState()
     val approved by vm.approved.collectAsState()
     val deviceName by vm.deviceName.collectAsState()
+    val testResult by vm.testResult.collectAsState()
     var manualId by remember { mutableStateOf("") }
     var manualCode by remember { mutableStateOf("") }
-    var manualHost by remember { mutableStateOf("http://192.168.1.5:8787") }
+    var manualHost by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Emparelhar PC", style = MaterialTheme.typography.headlineSmall)
@@ -126,15 +127,30 @@ fun PairingFlow(
                 Text("Sem câmara? Insira o código do PC:", style = MaterialTheme.typography.titleSmall)
                 OutlinedTextField(manualId, { manualId = it }, label = { Text("ID do emparelhamento") }, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(manualCode, { manualCode = it }, label = { Text("Código de 6 dígitos") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(manualHost, { manualHost = it }, label = { Text("Endereço do PC") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    manualHost, { manualHost = it },
+                    label = { Text("Endereço do PC") },
+                    placeholder = { Text("http://192.168.1.5:8787") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedButton(
+                    onClick = { vm.testConnection(manualHost) },
+                    modifier = Modifier.height(48.dp),
+                ) { Text("Testar endereço") }
+                testResult?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                 Button(
                     onClick = { vm.onManual(manualId, manualCode, manualHost) },
                     modifier = Modifier.height(48.dp),
-                    enabled = manualCode.length == 6,
+                    enabled = manualCode.length == 6 && manualHost.isNotBlank(),
                 ) { Text("Continuar") }
             }
             is PairUiState.Scanned -> {
                 Text("Código ${s.invite.code} · ${s.invite.host}", style = MaterialTheme.typography.bodyMedium)
+                OutlinedButton(
+                    onClick = { vm.testConnection(s.invite.host) },
+                    modifier = Modifier.height(48.dp),
+                ) { Text("Testar ligação") }
+                testResult?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                 Text("Permissões (autorize só as que quiser):", style = MaterialTheme.typography.titleSmall)
                 ALL_CAPABILITY_LABELS.forEach { label ->
                     Row {

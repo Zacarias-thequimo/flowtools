@@ -6,11 +6,17 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
+    <!-- usesCleartextTraffic: a app fala HTTP/WS com o servidor na rede
+         LOCAL indicada pelo utilizador (pairing). Sem isto, o Android 9+
+         bloqueia todo o tráfego http:// com "CLEARTEXT not permitted" e
+         nada funciona, mesmo com a rede OK. Postura: LAN-only; TLS fica
+         para a v2 (ver README, secção Segurança). -->
     <application
         android:label="FlowTools"
         android:theme="@style/Theme.FlowTools"
         android:allowBackup="false"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true">
