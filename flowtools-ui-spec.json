@@ -1,0 +1,199 @@
+{
+  "product": {
+    "name": "FlowTools",
+    "tagline": "O teu PC, mais perto.",
+    "platform": "Android companion app",
+    "purpose": "Controlar o PC, o browser e aplicações instaladas no computador a partir do telemóvel, sem interromper a visualização de vídeo.",
+    "approved_visual_direction": {
+      "tone": ["calma", "simples", "confiável", "produtiva"],
+      "palette": {
+        "canvas": "#F8F7F3",
+        "surface": "#FFFFFF",
+        "surface_tinted": "#EEF5F1",
+        "primary": "#0E2D4A",
+        "secondary": "#6B9B8A",
+        "accent_blue": "#BFD8F2",
+        "danger": "#B3261E",
+        "text_primary": "#17324D",
+        "text_secondary": "#66717B",
+        "divider": "#E4E7E5"
+      },
+      "shape": {
+        "card_radius_dp": 20,
+        "button_radius_dp": 16,
+        "field_radius_dp": 16,
+        "touch_target_min_dp": 48
+      },
+      "type": {
+        "family": "Android system sans / Roboto",
+        "headline_weight": 700,
+        "body_weight": 400,
+        "label_weight": 600
+      }
+    }
+  },
+  "design_principles": [
+    "Ações frequentes devem estar disponíveis em no máximo dois toques.",
+    "O estado da ligação ao PC deve estar sempre visível e ser compreensível.",
+    "A visualização remota deve manter uma moldura vertical 9:16 para leitura confortável no telemóvel.",
+    "Toda ação destrutiva deve ser explícita e reversível quando possível.",
+    "O utilizador deve conseguir voltar ao vídeo ou à ferramenta anterior sem perder contexto."
+  ],
+  "navigation": {
+    "type": "bottom_navigation",
+    "items": [
+      {"id": "home", "label": "Início", "icon": "home"},
+      {"id": "tools", "label": "Ferramentas", "icon": "grid_view"},
+      {"id": "settings", "label": "Definições", "icon": "settings"}
+    ],
+    "global_actions": ["connection_status", "notifications", "help"]
+  },
+  "screens": [
+    {
+      "id": "home",
+      "route": "/",
+      "title": "FlowTools",
+      "purpose": "Ponto de entrada para as ações mais usadas.",
+      "components": [
+        {"type": "top_app_bar", "title": "FlowTools", "actions": ["settings"]},
+        {"type": "heading", "text": "O que quer fazer?"},
+        {"type": "supporting_text", "text": "Controle o seu PC de forma simples enquanto vê os seus vídeos."},
+        {"type": "connection_card", "states": ["connected", "connecting", "offline", "needs_pairing"]},
+        {"type": "quick_action_grid", "columns": 2, "actions": [
+          {"id": "remote_control", "label": "Controlo remoto", "description": "Rato, multimédia e mais.", "icon": "mouse"},
+          {"id": "quick_text", "label": "Texto rápido", "description": "Envie texto para o seu PC.", "icon": "text_fields"},
+          {"id": "files", "label": "Ficheiros", "description": "Transfira e gestione ficheiros.", "icon": "folder"},
+          {"id": "audio", "label": "Áudio", "description": "Controle o volume e a reprodução.", "icon": "volume_up"}
+        ]},
+        {"type": "recent_actions", "visible": true}
+      ]
+    },
+    {
+      "id": "remote_control",
+      "route": "/remote",
+      "title": "Controlo remoto",
+      "purpose": "Controlar cursor, multimédia, volume, energia e bloqueio.",
+      "components": [
+        {"type": "top_app_bar", "title": "Controlo remoto", "navigation": "back", "actions": ["more"]},
+        {"type": "connection_pill", "text": "PC de trabalho · Ligado"},
+        {"type": "touchpad", "gesture_map": {"one_finger": "move_cursor", "tap": "left_click", "two_finger_tap": "right_click", "two_finger_scroll": "scroll"}},
+        {"type": "media_controls", "actions": ["previous", "play_pause", "next"]},
+        {"type": "volume_slider", "range": [0, 100], "step": 1},
+        {"type": "secondary_actions", "actions": [
+          {"id": "shutdown_pc", "label": "Desligar PC", "icon": "power", "requires_confirmation": true},
+          {"id": "lock_pc", "label": "Bloquear", "icon": "lock", "requires_confirmation": false}
+        ]}
+      ]
+    },
+    {
+      "id": "tools",
+      "route": "/tools",
+      "title": "Ferramentas",
+      "purpose": "Catálogo de ferramentas para controlar o PC, o browser e aplicações.",
+      "components": [
+        {"type": "top_app_bar", "title": "Ferramentas", "actions": ["more"]},
+        {"type": "search_field", "placeholder": "Pesquisar ferramentas"},
+        {"type": "tool_list", "items": [
+          {"id": "browser", "label": "Browser remoto", "description": "Navegue e controle páginas numa vista vertical.", "icon": "language", "priority": 1},
+          {"id": "app_control", "label": "Aplicações do PC", "description": "Abra, alterne e controle apps instaladas.", "icon": "apps", "priority": 1},
+          {"id": "quick_text", "label": "Enviar texto", "description": "Escreva no telemóvel e cole no PC.", "icon": "text_fields", "priority": 1},
+          {"id": "shortcuts", "label": "Atalhos", "description": "Execute combinações de teclado com um toque.", "icon": "keyboard", "priority": 2},
+          {"id": "screen_capture", "label": "Captura de ecrã", "description": "Tire e consulte capturas do PC.", "icon": "photo_camera", "priority": 2},
+          {"id": "file_transfer", "label": "Transferir ficheiro", "description": "Envie e receba ficheiros entre dispositivos.", "icon": "upload", "priority": 2},
+          {"id": "notifications", "label": "Notificações do PC", "description": "Consulte notificações sem mudar de ecrã.", "icon": "notifications", "priority": 3}
+        ]}
+      ]
+    },
+    {
+      "id": "browser",
+      "route": "/tools/browser",
+      "title": "Browser remoto",
+      "purpose": "Usar o browser do PC com uma experiência otimizada para o formato vertical do telemóvel.",
+      "components": [
+        {"type": "top_app_bar", "title": "Browser remoto", "navigation": "back", "actions": ["share", "more"]},
+        {"type": "browser_address_bar", "placeholder": "Pesquisar ou inserir endereço", "actions": ["back", "forward", "reload"]},
+        {"type": "remote_viewport", "aspect_ratio": "9:16", "fit_mode": "contain", "supports": ["tap", "long_press", "scroll", "pinch_zoom", "text_selection"]},
+        {"type": "viewport_controls", "actions": ["fit_to_phone", "zoom", "desktop_view", "open_on_pc"]},
+        {"type": "browser_bottom_bar", "actions": ["tabs", "home", "menu"]}
+      ],
+      "ux_rules": [
+        "Por defeito, o conteúdo é enquadrado numa área vertical 9:16, mantendo a vista do telemóvel.",
+        "O modo ajustar ao telemóvel mostra a página completa dentro da moldura, sem exigir zoom inicial.",
+        "O modo ampliar permite zoom e deslocamento sem alterar a sessão no PC.",
+        "A barra de endereço permanece acessível por gesto de deslize a partir do topo.",
+        "Se o browser do PC não estiver aberto, mostrar uma ação para o iniciar."
+      ]
+    },
+    {
+      "id": "app_control",
+      "route": "/tools/apps",
+      "title": "Aplicações do PC",
+      "purpose": "Abrir, alternar e interagir com outras aplicações do computador.",
+      "components": [
+        {"type": "top_app_bar", "title": "Aplicações do PC", "navigation": "back", "actions": ["search", "more"]},
+        {"type": "running_apps_carousel", "label": "Abertas agora"},
+        {"type": "app_grid", "label": "As suas aplicações", "supports": ["launch", "focus", "close"]},
+        {"type": "remote_viewport", "aspect_ratio": "9:16", "fit_mode": "contain", "supports": ["tap", "scroll", "pinch_zoom", "keyboard_input"]},
+        {"type": "floating_toolbar", "actions": ["touchpad", "keyboard", "back", "home", "recent_apps"]}
+      ],
+      "ux_rules": [
+        "A aplicação selecionada fica em foco no PC e é apresentada dentro da moldura vertical.",
+        "O utilizador pode alternar entre apps sem regressar ao dashboard.",
+        "A barra flutuante pode ser recolhida para não cobrir conteúdo.",
+        "A lista de aplicações deve respeitar permissões e mostrar apenas apps autorizadas pelo client."
+      ]
+    },
+    {
+      "id": "quick_text",
+      "route": "/tools/text",
+      "title": "Texto rápido",
+      "purpose": "Enviar texto, links e comandos curtos para o PC.",
+      "components": [
+        {"type": "top_app_bar", "title": "Texto rápido", "navigation": "back"},
+        {"type": "multiline_text_field", "placeholder": "Escreva ou cole aqui"},
+        {"type": "send_target_selector", "options": ["janela ativa", "browser", "clipboard"]},
+        {"type": "primary_button", "label": "Enviar para o PC"},
+        {"type": "history_list", "label": "Recentes", "actions": ["reuse", "delete"]}
+      ]
+    },
+    {
+      "id": "settings",
+      "route": "/settings",
+      "title": "Definições",
+      "purpose": "Gerir ligação, segurança, aparência e preferências de interação.",
+      "components": [
+        {"type": "top_app_bar", "title": "Definições"},
+        {"type": "settings_sections", "sections": [
+          {"id": "connection", "label": "Ligação", "items": ["paired_devices", "connection_mode", "reconnect"]},
+          {"id": "remote_view", "label": "Vista remota", "items": ["default_aspect_ratio", "fit_mode", "show_touch_indicators"]},
+          {"id": "security", "label": "Segurança", "items": ["require_local_network", "biometric_lock", "session_timeout", "allowed_apps"]},
+          {"id": "appearance", "label": "Aparência", "items": ["theme", "dynamic_color", "haptic_feedback"]}
+        ]}
+      ]
+    }
+  ],
+  "remote_architecture_contract": {
+    "android_client": "Aplicação Android nativa ou multiplataforma responsável pela UI, input tátil, autenticação e estado da sessão.",
+    "pc_client": "Agente local responsável por capturar janelas autorizadas, executar input, controlar browser e expor a lista de aplicações.",
+    "server": "Serviço de sessão e encaminhamento. Deve privilegiar ligação local direta; relay remoto é opcional e só deve ser ativado com consentimento.",
+    "transport": "WebSocket ou protocolo equivalente para eventos de baixa latência; HTTPS para pairing, metadados e transferência de ficheiros.",
+    "session_states": ["unpaired", "pairing", "connected", "reconnecting", "offline", "permission_required"],
+    "security_baseline": [
+      "Pairing com código temporário ou QR code.",
+      "Tokens de sessão rotativos e armazenamento seguro no Android.",
+      "Permissões por capacidade: cursor, teclado, captura de ecrã, browser, aplicações e ficheiros.",
+      "Indicador visível no PC sempre que a sessão remota estiver ativa.",
+      "Registo local de sessões e opção para revogar dispositivos."
+    ]
+  },
+  "acceptance_criteria": [
+    "O utilizador consegue chegar ao controlo remoto a partir do Início em um toque.",
+    "O browser remoto mantém uma viewport vertical 9:16 por defeito.",
+    "É possível alternar entre browser e outras aplicações sem perder a ligação.",
+    "Todas as funções remotas apresentam estado de ligação e erro compreensível.",
+    "Os alvos táteis principais têm pelo menos 48dp.",
+    "A UI permanece legível em ecrãs Android pequenos e grandes.",
+    "Ações destrutivas, como desligar o PC, pedem confirmação."
+  ]
+}
+
