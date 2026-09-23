@@ -19,11 +19,20 @@ android {
         versionCode = 1
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Só PT + EN: corta locales das libs de suporte.
+        resourceConfigurations += listOf("en", "pt")
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8: remove código e recursos não usados (corte grande no APK,
+            // ex. material-icons-extended e modelos só referenciados).
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             // Assinatura release via android/key.properties (ver README).
             // Sem key.properties, o CI gera APK de debug em vez de falhar.
             val keyPropsFile = rootProject.file("key.properties")

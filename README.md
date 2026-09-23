@@ -225,6 +225,33 @@ com `apksigner verify`. Sem secrets, o workflow publica na mesma os
 Localmente, o mesmo fluxo usa `android/key.properties` (ignorado pelo
 git — ver `build.gradle.kts`).
 
+### 6.2. Tamanho do APK (e como manter baixo)
+
+Medido na v1.0.0: APK universal **34,2 MB → 21,7 MB (−37%)**,
+AAB **23,2 MB → 14,5 MB (−38%)**, com:
+
+- R8 (`isMinifyEnabled`) + `shrinkResources` no build release;
+- `resourceConfigurations += ["en", "pt"]` (corta locales das libs);
+- regra `-dontwarn org.slf4j.**` (logging opcional das libs);
+- keeps só para eventos de sessão, pairing e ViewModels.
+
+O release com R8 é validado em dispositivo (Redroid) antes de cada
+tag: instala, abre Início/pairing/controlo remoto sem crashes.
+
+Alavancas futuras, por ordem de impacto:
+
+1. **APKs por ABI** (`splits.abi`, só `arm64-v8a` + `armeabi-v7a`):
+   o APK universal traz `.so` (CameraX, MLKit, DataStore) para todas
+   as arquiteturas; por ABI poupa mais ~5–8 MB por APK. O AAB já faz
+   isto sozinho na Play Store — só compensa para sideload.
+2. **Scanner sem modelo embutido**: `barcode-scanning` traz o modelo
+   MLKit no APK. Alternativa `play-services-code-scanner` (≈0 MB
+   extra), à custa de exigir Google Play Services no telemóvel.
+3. **Remover `material-icons-extended`** se os ícones usados couberem
+   em `material-icons-core` (o R8 já remove os não usados; o ganho
+   extra é só no tempo de build).
+4. **WebP** nos PNGs de `docs/` não conta para o APK (só repo).
+
 ## 7. Limites conhecidos da v1
 
 - Captura e input reais exigem sessão gráfica no PC (X11/Wayland);
