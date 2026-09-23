@@ -14,6 +14,7 @@ use clap::Parser;
 use enigo::{Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use flowtools_protocol::*;
 use futures_util::{SinkExt as _, StreamExt as _};
+use qrcode::QrCode;
 use std::{
     collections::HashSet,
     sync::{
@@ -744,6 +745,119 @@ async fn connect_and_run(server: &str, pc_id: &str) -> anyhow::Result<bool> {
     Ok(exit)
 }
 
+// --------------------------- pairing helpers -----------------------------
+// QR legível de verdade: terminal (blocos Unicode) + PNG + página HTML.
+// O telemóvel precisa do endereço do SERVIDOR na rede local, por isso o
+// payload leva `host=` e o .deb/.service funcionam sem intervenção.
+
+/// This machine's LAN address (UDP trick: no packets are actually sent).
+fn lan_ip() -> Option<std::net::IpAddr> {
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    // Connect only selects a route; nothing is transmitted.
+    sock.connect("8.8.8.8:80").ok()?;
+    sock.local_addr().ok().map(|a| a.ip())
+}
+
+fn is_loopback_host(host: &str) -> bool {
+    host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
+}
+
+/// server_url with a loopback host swapped for the LAN address, so the
+/// phone (same Wi-Fi, or connected to the phone's hotspot) can reach it.
+/// Non-loopback hosts (real LAN IP or hostname) pass through untouched.
+fn phone_base_url(server_url: &str, lan: Option<&str>) -> String {
+    let scheme_end = match server_url.find("://") {
+        Some(i) => i + 3,
+        None => return server_url.to_owned(),
+    };
+    let rest = &server_url[scheme_end..];
+    let host_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (mut host, mut tail) = rest.split_at(host_end);
+    // Strip a trailing port for the loopback check (keep it in `tail`).
+    if let Some(colon) = host.rfind(':') {
+        let (_, port) = host.split_at(colon);
+        if port[1..].chars().all(|c| c.is_ascii_digit()) {
+            tail = &rest[colon..];
+            host = &rest[..colon];
+        }
+    }
+    match (is_loopback_host(host), lan) {
+        (true, Some(ip)) => format!("{}{host}{tail}", &server_url[..scheme_end], host = ip),
+        _ => server_url.to_owned(),
+    }
+}
+
+fn render_qr(text: &str) -> Result<QrCode, String> {
+    QrCode::new(text.as_bytes()).map_err(|e| format!("{e:?}"))
+}
+
+/// Scannable QR straight in the terminal (works over SSH too).
+fn print_terminal_qr(text: &str) {
+    match render_qr(text) {
+        Ok(code) => {
+            let picture = code
+                .render::<qrcode::render::unicode::Dense1x2>()
+                .quiet_zone(true)
+                .module_dimensions(2, 1)
+                .build();
+            println!("{picture}");
+        }
+        Err(e) => tracing::warn!("QR de terminal indisponível: {e}"),
+    }
+}
+
+/// PNG + self-contained HTML page (QR as data URI) in the temp dir.
+/// Returns (png_path, html_path) for the user to open in the PC browser.
+fn write_pairing_page(
+    pairing_id: &str,
+    code: &str,
+    phone_server: &str,
+    qr_text: &str,
+) -> Result<(String, String), String> {
+    use std::io::Write as _;
+    let qr = render_qr(qr_text)?;
+    let img = qr
+        .render::<image::Luma<u8>>()
+        .min_dimensions(360, 360)
+        .build();
+    let dir = std::env::temp_dir();
+    let png_path = dir.join(format!("flowtools-pair-{pairing_id}.png"));
+    let html_path = dir.join(format!("flowtools-pair-{pairing_id}.html"));
+    image::DynamicImage::ImageLuma8(img)
+        .save(&png_path)
+        .map_err(|e| format!("{e}"))?;
+    // Smaller JPEG embedded in the page.
+    let small = qr
+        .render::<image::Luma<u8>>()
+        .min_dimensions(240, 240)
+        .build();
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 85)
+        .encode_image(&image::DynamicImage::ImageLuma8(small))
+        .map_err(|e| format!("{e}"))?;
+    let html = format!(
+        "<!doctype html><html lang=\"pt\"><meta charset=\"utf-8\">\
+        <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+        <title>FlowTools — Emparelhar</title>\
+        <body style=\"font-family:sans-serif;max-width:480px;margin:2em auto;text-align:center\">\
+        <h1>FlowTools — Emparelhar PC</h1>\
+        <p>Lê este QR com a app no telemóvel (ou insere o código à mão).</p>\
+        <img alt=\"QR de emparelhamento\" width=\"300\" \
+        src=\"data:image/jpeg;base64,{b64}\">\
+        <p style=\"font-size:2em;letter-spacing:.2em\"><b>{code}</b></p>\
+        <p>Servidor: <code>{phone_server}</code></p>\
+        <p>O código expira em 5 minutos e é de uso único.</p>\
+        </body></html>",
+        b64 = B64.encode(&jpeg),
+    );
+    let mut f = std::fs::File::create(&html_path).map_err(|e| format!("{e}"))?;
+    f.write_all(html.as_bytes()).map_err(|e| format!("{e}"))?;
+    Ok((
+        png_path.to_string_lossy().into_owned(),
+        html_path.to_string_lossy().into_owned(),
+    ))
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -767,10 +881,37 @@ async fn main() -> anyhow::Result<()> {
         .send()
         .await?;
     let challenge: PairChallenge = resp.json().await?;
+    // QR payload for the phone: pairing id + one-shot code + where to reach
+    // the session server. If --server is loopback, swap in this machine's LAN
+    // address so the phone (same Wi-Fi or hotspot client) can connect.
+    let lan = lan_ip().map(|ip| ip.to_string());
+    let phone_server = phone_base_url(&args.server, lan.as_deref());
+    let qr_text = format!(
+        "flowtools://pair?id={}&code={}&host={}",
+        challenge.pairing_id, challenge.code, phone_server
+    );
     println!("Emparelhe o telemóvel:");
     println!("  PC: {}", args.pc_name);
     println!("  Código temporário: {}", challenge.code);
-    println!("  QR: {}", challenge.qr_payload);
+    println!("  Endereço para o telemóvel: {phone_server}");
+    print_terminal_qr(&qr_text);
+    match write_pairing_page(
+        &challenge.pairing_id,
+        &challenge.code,
+        &phone_server,
+        &qr_text,
+    ) {
+        Ok((png, html)) => {
+            println!("  QR em imagem: {png}");
+            println!("  Página para ler o QR: {html}");
+            println!("  (abre o HTML no browser do PC e lê o QR com o telemóvel)");
+            // Best effort: open the page when running interactively.
+            if std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+                run("xdg-open", &[&html]);
+            }
+        }
+        Err(e) => tracing::warn!("não foi possível gerar o QR: {e}"),
+    }
     println!("  Permissões solicitadas:");
     for c in Capability::all() {
         println!("    - {}", c.label());
@@ -882,6 +1023,41 @@ mod tests {
         assert_eq!(safe_file_name("../../etc/passwd"), "passwd");
         assert_eq!(safe_file_name("nota final (2).pdf"), "nota final (2).pdf");
         assert_eq!(safe_file_name("..."), "ficheiro");
+    }
+
+    #[test]
+    fn phone_url_swaps_loopback_for_lan() {
+        assert_eq!(
+            phone_base_url("http://127.0.0.1:8787", Some("192.168.1.5")),
+            "http://192.168.1.5:8787"
+        );
+        assert_eq!(
+            phone_base_url("http://localhost:8787/v1", Some("192.168.43.10")),
+            "http://192.168.43.10:8787/v1"
+        );
+        // Real LAN hosts pass through untouched.
+        assert_eq!(
+            phone_base_url("http://192.168.1.5:8787", Some("10.0.0.2")),
+            "http://192.168.1.5:8787"
+        );
+        // No LAN detected: keep server URL (manual entry on the phone).
+        assert_eq!(
+            phone_base_url("http://127.0.0.1:8787", None),
+            "http://127.0.0.1:8787"
+        );
+    }
+
+    #[test]
+    fn qr_payload_renders() {
+        let text = "flowtools://pair?id=abc&code=123456&host=http://192.168.1.5:8787";
+        let qr = render_qr(text).expect("qr");
+        assert!(qr.width() >= 21);
+        let pic = qr
+            .render::<qrcode::render::unicode::Dense1x2>()
+            .quiet_zone(true)
+            .module_dimensions(2, 1)
+            .build();
+        assert!(pic.contains('█') || pic.contains('▀') || pic.contains('▄'));
     }
 
     #[tokio::test]

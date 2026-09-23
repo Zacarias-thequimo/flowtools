@@ -86,7 +86,34 @@ Arranque manual (ver o QR no terminal):
 flowtools-pc --server http://127.0.0.1:8787 --pc-name "PC de trabalho"
 ```
 
+O client mostra um **QR legível de verdade** em 3 formas (escolhe a que
+der jeito):
+
+1. **No terminal** — QR em blocos, pronto a ler (funciona até por SSH);
+2. **PNG** em `/tmp/flowtools-pair-<id>.png` — abre no visor de imagens;
+3. **Página HTML** em `/tmp/flowtools-pair-<id>.html` — abre no browser
+   do PC (o client tenta abrir sozinho em sessão interativa) e lê com
+   o telemóvel. Traz o QR grande + código + endereço do servidor.
+
+O QR já inclui o endereço do servidor (`host=`): se o `--server` for
+`localhost`, o client deteta o IP LAN da máquina e usa-o no QR e no
+texto "Endereço para o telemóvel". Se correres o servidor noutra
+máquina, passa o endereço LAN em `--server` e ele segue intacto.
+
 Remover: `sudo apt remove flowtools-pc`.
+
+### 1.3. Hotspot do telemóvel (sem Wi-Fi por perto)
+
+Sim, funciona: o hotspot **é** uma rede local.
+
+1. Liga o **ponto de acesso** no telemóvel e conecta o PC a ele.
+2. No PC, descobre o IP que o hotspot lhe deu:
+   `hostname -I` (tipico `192.168.43.x` em Android, `172.20.10.x` em iPhone).
+3. Garante que a firewall deixa passar a porta:
+   `sudo ufw allow 8787/tcp` (só se o `ufw` estiver ativo).
+4. Arranca `flowtools-pc` — o QR já traz esse IP; na app é só ler.
+   Se o servidor correr noutro PC da mesma rede, usa
+   `--server http://IP-DESSE-PC:8787`.
 
 ### 1.3. App Android
 

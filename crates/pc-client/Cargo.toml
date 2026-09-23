@@ -25,6 +25,7 @@ enigo = "0.6.1"
 xcap = "0.9.8"
 image = "0.25.10"
 base64 = "0.23.1"
+qrcode = { version = "0.14.1", features = ["image"] }
 
 [package.metadata.deb]
 maintainer = "FlowTools <https://github.com/Zacarias-thequimo/flowtools>"
