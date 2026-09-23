@@ -1,0 +1,20 @@
+[Unit]
+Description=FlowTools session server (pairing, relay, file inbox)
+Documentation=https://github.com/Zacarias-thequimo/flowtools
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=flowtools
+Group=flowtools
+Environment=PORT=8787
+EnvironmentFile=-/etc/default/flowtools-server
+ExecStart=/usr/bin/flowtools-server
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

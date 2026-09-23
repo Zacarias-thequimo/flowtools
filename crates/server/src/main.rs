@@ -10,11 +10,11 @@
 //! opt-in capacity (prepared, disabled by default).
 
 use axum::{
+    Router,
     extract::{Path, Query, State, WebSocketUpgrade},
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{get, post},
-    Router,
 };
 use flowtools_protocol::*;
 use futures::{SinkExt as _, StreamExt as _};
@@ -25,7 +25,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use tracing::info;
 use uuid::Uuid;
 
@@ -112,10 +112,7 @@ async fn health(State(s): State<AppState>) -> Json<HealthResp> {
     })
 }
 
-async fn pair_start(
-    State(s): State<AppState>,
-    Json(req): Json<PairRequest>,
-) -> impl IntoResponse {
+async fn pair_start(State(s): State<AppState>, Json(req): Json<PairRequest>) -> impl IntoResponse {
     let pairing_id = Uuid::new_v4().to_string();
     let code = six_digit_code();
     // In prod behind HTTPS; host discovered via mDNS/LAN in PC client.
@@ -139,10 +136,7 @@ async fn pair_start(
     (StatusCode::CREATED, Json(challenge))
 }
 
-async fn pair_claim(
-    State(s): State<AppState>,
-    Json(claim): Json<PairClaim>,
-) -> impl IntoResponse {
+async fn pair_claim(State(s): State<AppState>, Json(claim): Json<PairClaim>) -> impl IntoResponse {
     let mut w = s.inner.write().await;
     let stored = match w.pairings.get(&claim.pairing_id) {
         Some(p) => p,
@@ -150,7 +144,7 @@ async fn pair_claim(
             return (
                 StatusCode::NOT_FOUND,
                 Json(serde_json::json!({"error": UserErrorCode::InvalidCode})),
-            )
+            );
         }
     };
     if now_unix().saturating_sub(stored.created_unix) > CODE_TTL_SECS {
@@ -193,10 +187,7 @@ async fn pair_claim(
     )
 }
 
-async fn revoke(
-    State(s): State<AppState>,
-    Path(device_id): Path<String>,
-) -> impl IntoResponse {
+async fn revoke(State(s): State<AppState>, Path(device_id): Path<String>) -> impl IntoResponse {
     let mut w = s.inner.write().await;
     w.revoked_devices.insert(device_id.clone());
     // Collect tokens of this device, drop sessions and live senders.
@@ -293,7 +284,7 @@ async fn inbox_upload(
             return (
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"error": UserErrorCode::Unknown})),
-            )
+            );
         }
     };
     if bytes.len() > MAX_FILE_BYTES {
@@ -304,14 +295,15 @@ async fn inbox_upload(
     }
     // Sweep expired tickets opportunistically.
     let mut w = s.inner.write().await;
-    w.files.retain(|_, f| now_unix().saturating_sub(f.created_unix) <= FILE_TTL_SECS);
+    w.files
+        .retain(|_, f| now_unix().saturating_sub(f.created_unix) <= FILE_TTL_SECS);
     let sess = match valid_session(&w, &token) {
         Some(sess) => sess,
         None => {
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({"error": UserErrorCode::ExpiredSession})),
-            )
+            );
         }
     };
     if !sess.granted.contains(&Capability::Files) {
@@ -324,12 +316,21 @@ async fn inbox_upload(
     let size = bytes.len() as u64;
     w.files.insert(
         ticket.clone(),
-        StoredFile { name: name.clone(), bytes, pc_id: sess.pc_id.clone(), created_unix: now_unix() },
+        StoredFile {
+            name: name.clone(),
+            bytes,
+            pc_id: sess.pc_id.clone(),
+            created_unix: now_unix(),
+        },
     );
     // Notify the PC channel (frames-style fan-out of one).
     if let Some(link) = w.links.get(&sess.pc_id) {
         if let Some(pc) = &link.pc_tx {
-            let ev = ServerEvent::FileReady { ticket: ticket.clone(), name: name.clone(), size_bytes: size };
+            let ev = ServerEvent::FileReady {
+                ticket: ticket.clone(),
+                name: name.clone(),
+                size_bytes: size,
+            };
             let _ = pc.send(serde_json::to_string(&ev).unwrap());
         }
     }
@@ -355,7 +356,7 @@ async fn inbox_download(
     Path(ticket): Path<String>,
     Query(q): Query<InboxQuery>,
 ) -> axum::response::Response {
-    use axum::http::{header, HeaderMap, HeaderValue};
+    use axum::http::{HeaderMap, HeaderValue, header};
     let mut w = s.inner.write().await;
     let stored = match w.files.remove(&ticket) {
         Some(f) => f,
@@ -377,7 +378,10 @@ async fn inbox_download(
             .into_response();
     }
     let mut headers = HeaderMap::new();
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
+    headers.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/octet-stream"),
+    );
     if let Ok(v) = HeaderValue::from_str(&stored.name) {
         headers.insert("x-file-name", v);
     }
@@ -395,11 +399,7 @@ async fn ws_handler(
     ws.on_upgrade(move |socket| handle_android(socket, s, token))
 }
 
-async fn handle_android(
-    socket: axum::extract::ws::WebSocket,
-    state: AppState,
-    token: String,
-) {
+async fn handle_android(socket: axum::extract::ws::WebSocket, state: AppState, token: String) {
     use axum::extract::ws::Message;
     // Auth first; rotate token on connect and tell the client the new one.
     let (granted, pc_id, new_token) = {
@@ -424,9 +424,11 @@ async fn handle_android(
             }
             _ => {
                 let mut socket = socket;
-                let _ = socket.send(server_msg(&ServerEvent::Error {
-                    code: UserErrorCode::ExpiredSession,
-                })).await;
+                let _ = socket
+                    .send(server_msg(&ServerEvent::Error {
+                        code: UserErrorCode::ExpiredSession,
+                    }))
+                    .await;
                 return;
             }
         }
@@ -434,11 +436,25 @@ async fn handle_android(
 
     // Register this connection for PC->Android fan-out (frames, etc).
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
-    let _ = tx.send(serde_json::to_string(&ServerEvent::State { state: SessionState::Connected }).unwrap());
-    let _ = tx.send(serde_json::to_string(&ServerEvent::Token { token: new_token.clone() }).unwrap());
+    let _ = tx.send(
+        serde_json::to_string(&ServerEvent::State {
+            state: SessionState::Connected,
+        })
+        .unwrap(),
+    );
+    let _ = tx.send(
+        serde_json::to_string(&ServerEvent::Token {
+            token: new_token.clone(),
+        })
+        .unwrap(),
+    );
     {
         let mut w = state.inner.write().await;
-        w.links.entry(pc_id.clone()).or_default().android.insert(new_token.clone(), tx.clone());
+        w.links
+            .entry(pc_id.clone())
+            .or_default()
+            .android
+            .insert(new_token.clone(), tx.clone());
     }
 
     let (mut ws_tx, mut ws_rx) = socket.split();
@@ -460,23 +476,35 @@ async fn handle_android(
         };
         let event: Result<ClientEvent, _> = serde_json::from_str(&text);
         let reply: Option<ServerEvent> = match event {
-            Err(_) => Some(ServerEvent::Error { code: UserErrorCode::Unknown }),
+            Err(_) => Some(ServerEvent::Error {
+                code: UserErrorCode::Unknown,
+            }),
             Ok(ClientEvent::Ping) => Some(ServerEvent::Pong),
             Ok(ev) => {
                 if let ClientEvent::ShutdownPc { confirmed: false } = ev {
-                    Some(ServerEvent::Error { code: UserErrorCode::Unknown })
+                    Some(ServerEvent::Error {
+                        code: UserErrorCode::Unknown,
+                    })
                 } else if !missing_capabilities(&granted, &required_for_event(&ev)).is_empty() {
-                    Some(ServerEvent::Error { code: UserErrorCode::PermissionNeeded })
+                    Some(ServerEvent::Error {
+                        code: UserErrorCode::PermissionNeeded,
+                    })
                 } else {
                     // Forward to PC; PC acks and executes.
                     let pc_tx = {
-                        state.inner.read().await
-                            .links.get(&pc_id)
+                        state
+                            .inner
+                            .read()
+                            .await
+                            .links
+                            .get(&pc_id)
                             .and_then(|l| l.pc_tx.clone())
                     };
                     match pc_tx {
                         Some(pc) if pc.send(text).is_ok() => None,
-                        _ => Some(ServerEvent::Error { code: UserErrorCode::Offline }),
+                        _ => Some(ServerEvent::Error {
+                            code: UserErrorCode::Offline,
+                        }),
                     }
                 }
             }
@@ -507,16 +535,16 @@ async fn pc_handler(
     ws.on_upgrade(move |socket| handle_pc(socket, s, pc_id))
 }
 
-async fn handle_pc(
-    socket: axum::extract::ws::WebSocket,
-    state: AppState,
-    pc_id: String,
-) {
+async fn handle_pc(socket: axum::extract::ws::WebSocket, state: AppState, pc_id: String) {
     use axum::extract::ws::Message;
     let known = state.inner.read().await.known_pcs.contains(&pc_id);
     let (mut ws_tx, mut ws_rx) = socket.split();
     if !known {
-        let _ = ws_tx.send(server_msg(&ServerEvent::Error { code: UserErrorCode::ExpiredSession })).await;
+        let _ = ws_tx
+            .send(server_msg(&ServerEvent::Error {
+                code: UserErrorCode::ExpiredSession,
+            }))
+            .await;
         return;
     }
 
@@ -547,8 +575,12 @@ async fn handle_pc(
             continue;
         }
         let targets = {
-            state.inner.read().await
-                .links.get(&pc_id)
+            state
+                .inner
+                .read()
+                .await
+                .links
+                .get(&pc_id)
                 .map(|l| l.android.values().cloned().collect::<Vec<_>>())
                 .unwrap_or_default()
         };
@@ -645,8 +677,9 @@ mod tests {
 
     #[tokio::test]
     async fn approved_must_be_subset_of_offered() {
-        let offered: HashSet<Capability> =
-            [Capability::Cursor, Capability::Keyboard].into_iter().collect();
+        let offered: HashSet<Capability> = [Capability::Cursor, Capability::Keyboard]
+            .into_iter()
+            .collect();
         let bad: HashSet<Capability> = [Capability::Files].into_iter().collect();
         assert!(!bad.is_subset(&offered));
     }
@@ -668,16 +701,18 @@ mod tests {
 
     async fn next_text<S>(stream: &mut S) -> String
     where
-        S: StreamExt<Item = Result<tokio_tungstenite::tungstenite::Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+        S: StreamExt<
+                Item = Result<
+                    tokio_tungstenite::tungstenite::Message,
+                    tokio_tungstenite::tungstenite::Error,
+                >,
+            > + Unpin,
     {
-        let msg = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            stream.next(),
-        )
-        .await
-        .expect("timed out waiting for ws message")
-        .expect("stream ended")
-        .unwrap();
+        let msg = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
+            .await
+            .expect("timed out waiting for ws message")
+            .expect("stream ended")
+            .unwrap();
         match msg {
             tokio_tungstenite::tungstenite::Message::Text(t) => t.to_string(),
             other => panic!("expected text, got {other:?}"),
@@ -699,60 +734,110 @@ mod tests {
                 offered: Capability::all().into_iter().collect(),
                 local_only: true,
             })
-            .send().await.unwrap()
-            .json().await.unwrap();
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
         let session: SessionToken = http
             .post(format!("{base}/v1/pair/claim"))
             .json(&PairClaim {
                 pairing_id: challenge.pairing_id,
                 code: challenge.code,
                 device_name: "Pixel".into(),
-                approved: [Capability::Cursor, Capability::Media, Capability::ScreenCapture]
-                    .into_iter().collect(),
+                approved: [
+                    Capability::Cursor,
+                    Capability::Media,
+                    Capability::ScreenCapture,
+                ]
+                .into_iter()
+                .collect(),
             })
-            .send().await.unwrap()
-            .json().await.unwrap();
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
 
         // PC connects its channel.
-        let (mut pc, _) = tokio_tungstenite::connect_async(format!("{ws_base}/v1/pc/channel?pc_id=pc-test"))
-            .await.unwrap();
+        let (mut pc, _) =
+            tokio_tungstenite::connect_async(format!("{ws_base}/v1/pc/channel?pc_id=pc-test"))
+                .await
+                .unwrap();
         // Android connects; rotation gives a fresh token.
-        let (mut android, _) = tokio_tungstenite::connect_async(format!("{ws_base}/v1/session/ws?token={}", session.token))
-            .await.unwrap();
+        let (mut android, _) = tokio_tungstenite::connect_async(format!(
+            "{ws_base}/v1/session/ws?token={}",
+            session.token
+        ))
+        .await
+        .unwrap();
         assert!(next_text(&mut android).await.contains("connected")); // State
         let token_msg = next_text(&mut android).await;
-        let new_token: String = serde_json::from_str::<serde_json::Value>(&token_msg)
-            .unwrap()["token"].as_str().unwrap().to_owned();
+        let new_token: String =
+            serde_json::from_str::<serde_json::Value>(&token_msg).unwrap()["token"]
+                .as_str()
+                .unwrap()
+                .to_owned();
         assert_ne!(new_token, session.token);
 
         // Cursor event is forwarded to the PC.
         let cursor = serde_json::to_string(&ClientEvent::CursorMove { dx: 4.0, dy: -2.0 }).unwrap();
-        android.send(tokio_tungstenite::tungstenite::Message::Text(cursor.clone().into())).await.unwrap();
+        android
+            .send(tokio_tungstenite::tungstenite::Message::Text(
+                cursor.clone().into(),
+            ))
+            .await
+            .unwrap();
         assert_eq!(next_text(&mut pc).await, cursor);
 
         // PC frame is fanned out to Android.
         let frame = serde_json::to_string(&ServerEvent::Frame {
-            viewport: ViewportMode::FitPhone, jpeg_base64: "eA==".into(), seq: 7,
-        }).unwrap();
-        pc.send(tokio_tungstenite::tungstenite::Message::Text(frame.clone().into())).await.unwrap();
+            viewport: ViewportMode::FitPhone,
+            jpeg_base64: "eA==".into(),
+            seq: 7,
+        })
+        .unwrap();
+        pc.send(tokio_tungstenite::tungstenite::Message::Text(
+            frame.clone().into(),
+        ))
+        .await
+        .unwrap();
         assert_eq!(next_text(&mut android).await, frame);
 
         // FileOffer without Files capability -> PermissionNeeded, PC sees nothing.
-        let offer = serde_json::to_string(&ClientEvent::FileOffer { name: "a.zip".into(), size_bytes: 9 }).unwrap();
-        android.send(tokio_tungstenite::tungstenite::Message::Text(offer.into())).await.unwrap();
+        let offer = serde_json::to_string(&ClientEvent::FileOffer {
+            name: "a.zip".into(),
+            size_bytes: 9,
+        })
+        .unwrap();
+        android
+            .send(tokio_tungstenite::tungstenite::Message::Text(offer.into()))
+            .await
+            .unwrap();
         assert!(next_text(&mut android).await.contains("permission_needed"));
 
         // Ping -> Pong locally (never forwarded).
         let ping = serde_json::to_string(&ClientEvent::Ping).unwrap();
-        android.send(tokio_tungstenite::tungstenite::Message::Text(ping.into())).await.unwrap();
+        android
+            .send(tokio_tungstenite::tungstenite::Message::Text(ping.into()))
+            .await
+            .unwrap();
         assert!(next_text(&mut android).await.contains("pong"));
 
         // Old (rotated-out) token is rejected; new token reconnects (reconnect path).
-        let (mut stale, _) = tokio_tungstenite::connect_async(format!("{ws_base}/v1/session/ws?token={}", session.token))
-            .await.unwrap();
+        let (mut stale, _) = tokio_tungstenite::connect_async(format!(
+            "{ws_base}/v1/session/ws?token={}",
+            session.token
+        ))
+        .await
+        .unwrap();
         assert!(next_text(&mut stale).await.contains("expired_session"));
-        let (mut android2, _) = tokio_tungstenite::connect_async(format!("{ws_base}/v1/session/ws?token={new_token}"))
-            .await.unwrap();
+        let (mut android2, _) =
+            tokio_tungstenite::connect_async(format!("{ws_base}/v1/session/ws?token={new_token}"))
+                .await
+                .unwrap();
         assert!(next_text(&mut android2).await.contains("connected"));
     }
 
@@ -762,7 +847,11 @@ mod tests {
         let http = reqwest::Client::new();
         let ws_base = base.replacen("http", "ws", 1);
 
-        async fn pair_with(http: &reqwest::Client, base: &str, approved: HashSet<Capability>) -> SessionToken {
+        async fn pair_with(
+            http: &reqwest::Client,
+            base: &str,
+            approved: HashSet<Capability>,
+        ) -> SessionToken {
             let challenge: PairChallenge = http
                 .post(format!("{base}/v1/pair/start"))
                 .json(&PairRequest {
@@ -771,8 +860,12 @@ mod tests {
                     offered: Capability::all().into_iter().collect(),
                     local_only: true,
                 })
-                .send().await.unwrap()
-                .json().await.unwrap();
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
             http.post(format!("{base}/v1/pair/claim"))
                 .json(&PairClaim {
                     pairing_id: challenge.pairing_id,
@@ -780,32 +873,51 @@ mod tests {
                     device_name: "Pixel".into(),
                     approved,
                 })
-                .send().await.unwrap()
-                .json().await.unwrap()
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap()
         }
 
         // Without Files capability the upload is refused.
         let no_files = pair_with(&http, &base, [Capability::Cursor].into_iter().collect()).await;
-        let denied = http.post(format!("{base}/v1/files/inbox"))
+        let denied = http
+            .post(format!("{base}/v1/files/inbox"))
             .multipart(
                 reqwest::multipart::Form::new()
                     .text("token", no_files.token)
-                    .part("file", reqwest::multipart::Part::bytes(b"hello".to_vec()).file_name("a.txt")),
+                    .part(
+                        "file",
+                        reqwest::multipart::Part::bytes(b"hello".to_vec()).file_name("a.txt"),
+                    ),
             )
-            .send().await.unwrap();
+            .send()
+            .await
+            .unwrap();
         assert_eq!(denied.status(), StatusCode::FORBIDDEN);
 
         // With Files capability: upload ok, PC gets FileReady, one-shot download.
         let session = pair_with(&http, &base, [Capability::Files].into_iter().collect()).await;
-        let (mut pc, _) = tokio_tungstenite::connect_async(format!("{ws_base}/v1/pc/channel?pc_id=pc-files"))
-            .await.unwrap();
-        let body = http.post(format!("{base}/v1/files/inbox"))
+        let (mut pc, _) =
+            tokio_tungstenite::connect_async(format!("{ws_base}/v1/pc/channel?pc_id=pc-files"))
+                .await
+                .unwrap();
+        let body = http
+            .post(format!("{base}/v1/files/inbox"))
             .multipart(
                 reqwest::multipart::Form::new()
                     .text("token", session.token)
-                    .part("file", reqwest::multipart::Part::bytes(b"hello-flow".to_vec()).file_name("nota.txt")),
+                    .part(
+                        "file",
+                        reqwest::multipart::Part::bytes(b"hello-flow".to_vec())
+                            .file_name("nota.txt"),
+                    ),
             )
-            .send().await.unwrap();
+            .send()
+            .await
+            .unwrap();
         assert_eq!(body.status(), StatusCode::CREATED);
         let v: serde_json::Value = body.json().await.unwrap();
         let ticket = v["ticket"].as_str().unwrap().to_owned();
@@ -814,15 +926,21 @@ mod tests {
         let ready = next_text(&mut pc).await;
         assert!(ready.contains("file_ready") && ready.contains(&ticket));
 
-        let dl = http.get(format!("{base}/v1/files/inbox/{ticket}?pc_id=pc-files"))
-            .send().await.unwrap();
+        let dl = http
+            .get(format!("{base}/v1/files/inbox/{ticket}?pc_id=pc-files"))
+            .send()
+            .await
+            .unwrap();
         assert_eq!(dl.status(), StatusCode::OK);
         assert_eq!(dl.headers()["x-file-name"], "nota.txt");
         assert_eq!(dl.bytes().await.unwrap().as_ref(), b"hello-flow");
 
         // One-shot: second download is gone.
-        let gone = http.get(format!("{base}/v1/files/inbox/{ticket}?pc_id=pc-files"))
-            .send().await.unwrap();
+        let gone = http
+            .get(format!("{base}/v1/files/inbox/{ticket}?pc_id=pc-files"))
+            .send()
+            .await
+            .unwrap();
         assert_eq!(gone.status(), StatusCode::NOT_FOUND);
     }
 }

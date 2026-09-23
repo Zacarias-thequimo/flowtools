@@ -2,6 +2,10 @@
 name = "flowtools-pc"
 version = "0.1.0"
 edition = "2024"
+description = "FlowTools PC client: remote input, screen capture, apps, browser and files"
+license = "MIT"
+homepage = "https://github.com/Zacarias-thequimo/flowtools"
+repository = "https://github.com/Zacarias-thequimo/flowtools"
 
 [dependencies]
 flowtools-protocol = { path = "../protocol" }
@@ -21,3 +25,16 @@ enigo = "0.6.1"
 xcap = "0.9.8"
 image = "0.25.10"
 base64 = "0.23.1"
+
+[package.metadata.deb]
+maintainer = "FlowTools <https://github.com/Zacarias-thequimo/flowtools>"
+copyright = "2026, FlowTools contributors"
+section = "utils"
+priority = "optional"
+extended-description = """\
+Controla este PC a partir do telemóvel (cursor, teclado, multimédia,
+browser, aplicações e ficheiros) com pairing local e permissões granulares."""
+assets = [
+    "$auto",
+    ["debian/flowtools-pc.service", "usr/lib/systemd/user/flowtools-pc.service", "644"],
+]

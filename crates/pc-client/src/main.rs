@@ -9,7 +9,7 @@
 //! - enforces the allowed-apps list; shows a visible session indicator
 //!   while a remote session is active.
 
-use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as B64};
 use clap::Parser;
 use enigo::{Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use flowtools_protocol::*;
@@ -17,8 +17,8 @@ use futures_util::{SinkExt as _, StreamExt as _};
 use std::{
     collections::HashSet,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -45,9 +45,24 @@ struct AllowedApp {
 
 fn allowed_apps() -> Vec<AllowedApp> {
     vec![
-        AllowedApp { id: "browser", name: "Browser", bin: "xdg-open", args: &["about:blank"] },
-        AllowedApp { id: "vlc", name: "VLC", bin: "vlc", args: &[] },
-        AllowedApp { id: "vscode", name: "VS Code", bin: "code", args: &[] },
+        AllowedApp {
+            id: "browser",
+            name: "Browser",
+            bin: "xdg-open",
+            args: &["about:blank"],
+        },
+        AllowedApp {
+            id: "vlc",
+            name: "VLC",
+            bin: "vlc",
+            args: &[],
+        },
+        AllowedApp {
+            id: "vscode",
+            name: "VS Code",
+            bin: "code",
+            args: &[],
+        },
     ]
 }
 
@@ -183,7 +198,10 @@ fn media_playing() -> bool {
 }
 
 fn do_volume(level: u8) -> bool {
-    run("pactl", &["set-sink-volume", "@DEFAULT_SINK@", &format!("{level}%")])
+    run(
+        "pactl",
+        &["set-sink-volume", "@DEFAULT_SINK@", &format!("{level}%")],
+    )
 }
 
 /// Visible indicator while a remote session is active (acceptance #16).
@@ -199,7 +217,11 @@ fn session_indicator(active: bool, detail: &str) {
 }
 
 fn ack(ok: bool, message: &str) -> String {
-    serde_json::to_string(&ServerEvent::Ack { ok, message: message.into() }).unwrap()
+    serde_json::to_string(&ServerEvent::Ack {
+        ok,
+        message: message.into(),
+    })
+    .unwrap()
 }
 
 /// Keep only a safe file name (no directories, no traversal).
@@ -225,7 +247,9 @@ fn safe_file_name(name: &str) -> String {
 
 fn download_dir() -> std::path::PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-    std::path::Path::new(&home).join("Downloads").join("FlowTools")
+    std::path::Path::new(&home)
+        .join("Downloads")
+        .join("FlowTools")
 }
 
 async fn download_file(
@@ -243,7 +267,9 @@ async fn download_file(
     let name = safe_file_name(&name);
     let dir = download_dir();
     if std::fs::create_dir_all(&dir).is_err() {
-        send(ServerEvent::Error { code: UserErrorCode::Unknown });
+        send(ServerEvent::Error {
+            code: UserErrorCode::Unknown,
+        });
         return;
     }
     let path = dir.join(&name);
@@ -257,11 +283,15 @@ async fn download_file(
     {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            send(ServerEvent::Error { code: UserErrorCode::FileExists });
+            send(ServerEvent::Error {
+                code: UserErrorCode::FileExists,
+            });
             return;
         }
         Err(_) => {
-            send(ServerEvent::Error { code: UserErrorCode::Unknown });
+            send(ServerEvent::Error {
+                code: UserErrorCode::Unknown,
+            });
             return;
         }
     };
@@ -272,7 +302,9 @@ async fn download_file(
     {
         Ok(r) if r.status().is_success() => r,
         _ => {
-            send(ServerEvent::Error { code: UserErrorCode::Unknown });
+            send(ServerEvent::Error {
+                code: UserErrorCode::Unknown,
+            });
             return;
         }
     };
@@ -285,17 +317,25 @@ async fn download_file(
         let chunk = match chunk {
             Ok(c) => c,
             Err(_) => {
-                send(ServerEvent::Error { code: UserErrorCode::TransferCancelled });
+                send(ServerEvent::Error {
+                    code: UserErrorCode::TransferCancelled,
+                });
                 let _ = tokio::fs::remove_file(&path).await;
                 return;
             }
         };
         if file.write_all(&chunk).await.is_err() {
-            send(ServerEvent::Error { code: UserErrorCode::Unknown });
+            send(ServerEvent::Error {
+                code: UserErrorCode::Unknown,
+            });
             return;
         }
         done += chunk.len() as u64;
-        send(ServerEvent::FileProgress { name: name.clone(), done_bytes: done, total_bytes: size });
+        send(ServerEvent::FileProgress {
+            name: name.clone(),
+            done_bytes: done,
+            total_bytes: size,
+        });
     }
     send(ServerEvent::FileDone {
         name: name.clone(),
@@ -320,7 +360,11 @@ impl Runtime {
     fn handle(&mut self, ev: ClientEvent) -> bool {
         match ev {
             ClientEvent::CursorMove { dx, dy } => {
-                let ok = self.enigo.as_mut().map(|e| e.move_mouse(dx as i32, dy as i32, Coordinate::Rel).is_ok()).unwrap_or(false);
+                let ok = self
+                    .enigo
+                    .as_mut()
+                    .map(|e| e.move_mouse(dx as i32, dy as i32, Coordinate::Rel).is_ok())
+                    .unwrap_or(false);
                 self.send_ack(ok, if ok { "OK" } else { NO_INPUT_MSG });
             }
             ClientEvent::Click { button } => {
@@ -329,11 +373,19 @@ impl Runtime {
                     MouseButton::Right => Button::Right,
                     MouseButton::Middle => Button::Middle,
                 };
-                let ok = self.enigo.as_mut().map(|e| e.button(b, Direction::Click).is_ok()).unwrap_or(false);
+                let ok = self
+                    .enigo
+                    .as_mut()
+                    .map(|e| e.button(b, Direction::Click).is_ok())
+                    .unwrap_or(false);
                 self.send_ack(ok, if ok { "OK" } else { NO_INPUT_MSG });
             }
             ClientEvent::Scroll { dy, .. } => {
-                let ok = self.enigo.as_mut().map(|e| e.scroll(-dy as i32 / 20, enigo::Axis::Vertical).is_ok()).unwrap_or(false);
+                let ok = self
+                    .enigo
+                    .as_mut()
+                    .map(|e| e.scroll(-dy as i32 / 20, enigo::Axis::Vertical).is_ok())
+                    .unwrap_or(false);
                 self.send_ack(ok, if ok { "OK" } else { NO_INPUT_MSG });
             }
             ClientEvent::KeyPress { key, modifiers } => {
@@ -349,34 +401,82 @@ impl Runtime {
                     TextTarget::Clipboard => {
                         run("wl-copy", &[&text]) || run("xclip", &["-selection", "clipboard"])
                     }
-                    _ => self.enigo.as_mut().map(|e| e.text(&text).is_ok()).unwrap_or(false),
+                    _ => self
+                        .enigo
+                        .as_mut()
+                        .map(|e| e.text(&text).is_ok())
+                        .unwrap_or(false),
                 };
-                self.send_ack(ok, if ok { "Texto enviado." } else { "Não foi possível enviar o texto." });
+                self.send_ack(
+                    ok,
+                    if ok {
+                        "Texto enviado."
+                    } else {
+                        "Não foi possível enviar o texto."
+                    },
+                );
             }
             ClientEvent::Media { action } => {
                 let ok = do_media(action);
-                let state = ServerEvent::MediaState { playing: media_playing(), volume: 50 };
+                let state = ServerEvent::MediaState {
+                    playing: media_playing(),
+                    volume: 50,
+                };
                 self.send(serde_json::to_string(&state).unwrap());
-                self.send_ack(ok, if ok { "OK" } else { "Controlo multimédia indisponível (playerctl)." });
+                self.send_ack(
+                    ok,
+                    if ok {
+                        "OK"
+                    } else {
+                        "Controlo multimédia indisponível (playerctl)."
+                    },
+                );
             }
             ClientEvent::Volume { level } => {
                 let ok = do_volume(level);
-                let state = ServerEvent::MediaState { playing: media_playing(), volume: level };
+                let state = ServerEvent::MediaState {
+                    playing: media_playing(),
+                    volume: level,
+                };
                 self.send(serde_json::to_string(&state).unwrap());
-                self.send_ack(ok, if ok { "OK" } else { "Não foi possível mudar o volume." });
+                self.send_ack(
+                    ok,
+                    if ok {
+                        "OK"
+                    } else {
+                        "Não foi possível mudar o volume."
+                    },
+                );
             }
             ClientEvent::BrowserNavigate { url } => {
                 let url = if url.contains("://") || url.contains('.') {
-                    if url.contains("://") { url } else { format!("https://{url}") }
+                    if url.contains("://") {
+                        url
+                    } else {
+                        format!("https://{url}")
+                    }
                 } else {
-                    format!("https://www.google.com/search?q={}", url::form_urlencoded::byte_serialize(url.as_bytes()).collect::<String>())
+                    format!(
+                        "https://www.google.com/search?q={}",
+                        url::form_urlencoded::byte_serialize(url.as_bytes()).collect::<String>()
+                    )
                 };
                 let ok = run("xdg-open", &[&url]);
-                self.send_ack(ok, if ok { "A abrir no browser do PC." } else { "Não foi possível abrir o browser." });
+                self.send_ack(
+                    ok,
+                    if ok {
+                        "A abrir no browser do PC."
+                    } else {
+                        "Não foi possível abrir o browser."
+                    },
+                );
             }
             ClientEvent::BrowserAction { action } => {
                 let (ok, msg) = match action {
-                    BrowserAction::OpenBrowser => (run("xdg-open", &["about:blank"]), "A abrir o browser no PC."),
+                    BrowserAction::OpenBrowser => (
+                        run("xdg-open", &["about:blank"]),
+                        "A abrir o browser no PC.",
+                    ),
                     _ => (true, "Use a vista remota para navegar na página."),
                 };
                 self.send_ack(ok, msg);
@@ -387,7 +487,11 @@ impl Runtime {
             }
             ClientEvent::Shortcut { id } => {
                 let done = match shortcut_to_keys(&id) {
-                    Some((mods, key)) => self.enigo.as_mut().map(|e| press_combo(e, &mods, key)).unwrap_or(false),
+                    Some((mods, key)) => self
+                        .enigo
+                        .as_mut()
+                        .map(|e| press_combo(e, &mods, key))
+                        .unwrap_or(false),
                     None if id == "lock" => {
                         run("loginctl", &["lock-session"]);
                         true
@@ -400,10 +504,19 @@ impl Runtime {
                         };
                         do_media(a)
                     }
-                    None if id == "mute" => run("pactl", &["set-sink-mute", "@DEFAULT_SINK@", "toggle"]),
+                    None if id == "mute" => {
+                        run("pactl", &["set-sink-mute", "@DEFAULT_SINK@", "toggle"])
+                    }
                     None => false,
                 };
-                self.send_ack(done, if done { "Atalho executado." } else { "Atalho não suportado." });
+                self.send_ack(
+                    done,
+                    if done {
+                        "Atalho executado."
+                    } else {
+                        "Atalho não suportado."
+                    },
+                );
             }
             ClientEvent::LockPc => {
                 run("loginctl", &["lock-session"]);
@@ -448,15 +561,46 @@ impl Runtime {
                     .stderr(std::process::Stdio::null())
                     .spawn()
                     .is_ok();
-                (ok, if ok { "A abrir a aplicação." } else { "Não foi possível abrir." })
+                (
+                    ok,
+                    if ok {
+                        "A abrir a aplicação."
+                    } else {
+                        "Não foi possível abrir."
+                    },
+                )
             }
             AppAction::Focus => {
-                let ok = run("wmctrl", &["-a", app.name]) || run("xdotool", &["search", "--onlyvisible", "--class", app.bin, "windowactivate"]);
-                (ok, if ok { "Aplicação em foco." } else { "Use a vista remota para focar a janela." })
+                let ok = run("wmctrl", &["-a", app.name])
+                    || run(
+                        "xdotool",
+                        &[
+                            "search",
+                            "--onlyvisible",
+                            "--class",
+                            app.bin,
+                            "windowactivate",
+                        ],
+                    );
+                (
+                    ok,
+                    if ok {
+                        "Aplicação em foco."
+                    } else {
+                        "Use a vista remota para focar a janela."
+                    },
+                )
             }
             AppAction::Close => {
                 let ok = run("wmctrl", &["-c", app.name]);
-                (ok, if ok { "Aplicação fechada." } else { "Feche pela vista remota." })
+                (
+                    ok,
+                    if ok {
+                        "Aplicação fechada."
+                    } else {
+                        "Feche pela vista remota."
+                    },
+                )
             }
         }
     }
@@ -484,11 +628,18 @@ async fn capture_loop(
         }
         let mode = *viewport.lock().await;
         // Spawn blocking capture off the async runtime.
-        let frame = tokio::task::spawn_blocking(|| capture_primary(540, 60)).await.ok().flatten();
+        let frame = tokio::task::spawn_blocking(|| capture_primary(540, 60))
+            .await
+            .ok()
+            .flatten();
         match frame {
             Some(jpeg) => {
                 let n = seq.fetch_add(1, Ordering::SeqCst);
-                let ev = ServerEvent::Frame { viewport: mode, jpeg_base64: B64.encode(&jpeg), seq: n };
+                let ev = ServerEvent::Frame {
+                    viewport: mode,
+                    jpeg_base64: B64.encode(&jpeg),
+                    seq: n,
+                };
                 if out.send(serde_json::to_string(&ev).unwrap()).is_err() {
                     break;
                 }
@@ -501,7 +652,9 @@ async fn capture_loop(
 async fn connect_and_run(server: &str, pc_id: &str) -> anyhow::Result<bool> {
     let http = reqwest::Client::new();
     let ws_url = server.replacen("http", "ws", 1) + &format!("/v1/pc/channel?pc_id={pc_id}");
-    let (ws, _) = connect_async(&ws_url).await.map_err(|e| anyhow::anyhow(format!("ws: {e}")))?;
+    let (ws, _) = connect_async(&ws_url)
+        .await
+        .map_err(|e| anyhow::anyhow(format!("ws: {e}")))?;
     session_indicator(true, pc_id);
     let (mut sink, mut stream) = ws.split();
     let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -536,7 +689,13 @@ async fn connect_and_run(server: &str, pc_id: &str) -> anyhow::Result<bool> {
             None
         }
     };
-    let mut rt = Runtime { enigo, out: out_tx, streaming, viewport, seq };
+    let mut rt = Runtime {
+        enigo,
+        out: out_tx,
+        streaming,
+        viewport,
+        seq,
+    };
 
     let mut exit = false;
     while let Some(msg) = stream.next().await {
@@ -557,8 +716,11 @@ async fn connect_and_run(server: &str, pc_id: &str) -> anyhow::Result<bool> {
             }
             Err(_) => {
                 // Server-initiated messages (e.g. file ready for download).
-                if let Ok(ServerEvent::FileReady { ticket, name, size_bytes }) =
-                    serde_json::from_str::<ServerEvent>(&text)
+                if let Ok(ServerEvent::FileReady {
+                    ticket,
+                    name,
+                    size_bytes,
+                }) = serde_json::from_str::<ServerEvent>(&text)
                 {
                     tokio::spawn(download_file(
                         http.clone(),
@@ -584,7 +746,9 @@ async fn connect_and_run(server: &str, pc_id: &str) -> anyhow::Result<bool> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().with_env_filter("flowtools=info").init();
+    tracing_subscriber::fmt()
+        .with_env_filter("flowtools=info")
+        .init();
     let args = Args::parse();
     let pc_id = format!("pc-{}", &uuid::Uuid::new_v4().to_string()[..8]);
 
@@ -725,10 +889,21 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("flowtools-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("dup.txt");
-        let first = tokio::fs::OpenOptions::new().write(true).create_new(true).open(&path).await;
+        let first = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .await;
         assert!(first.is_ok());
-        let second = tokio::fs::OpenOptions::new().write(true).create_new(true).open(&path).await;
-        assert_eq!(second.unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+        let second = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .await;
+        assert_eq!(
+            second.unwrap_err().kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 }

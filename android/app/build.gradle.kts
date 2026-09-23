@@ -5,6 +5,9 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+import java.io.FileInputStream
+import java.util.Properties
+
 android {
     namespace = "com.flowtools"
     compileSdk = 34
@@ -21,6 +24,22 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Assinatura release via android/key.properties (ver README).
+            // Sem key.properties, o CI gera APK de debug em vez de falhar.
+            val keyPropsFile = rootProject.file("key.properties")
+            if (keyPropsFile.exists()) {
+                signingConfigs {
+                    create("release") {
+                        val keyProps = Properties()
+                        keyProps.load(FileInputStream(keyPropsFile))
+                        storeFile = file(keyProps["storeFile"] as String)
+                        storePassword = keyProps["storePassword"] as String
+                        keyAlias = keyProps["keyAlias"] as String
+                        keyPassword = keyProps["keyPassword"] as String
+                    }
+                }
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         debug {
             applicationIdSuffix = ".debug"

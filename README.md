@@ -4,6 +4,11 @@ Suíte de ferramentas para Android que permite controlar o PC, o browser e
 outras aplicações do computador a partir do telemóvel, sem pausar o vídeo
 que estás a ver nem sair da aplicação atual.
 
+> **Queres só usar?** Não precisas de Rust, cargo, JDK ou Android SDK.
+> Vai a **Releases** (geradas por CI em cada tag `v*`) e saca:
+> `flowtools-pc_*_amd64.deb`, `flowtools-server_*_amd64.deb` e
+> `app-release.apk` (assinado). Instalação em 5 minutos — ver secção 1.
+
 Três componentes:
 
 | Componente | Pasta | Tecnologia |
@@ -35,101 +40,68 @@ Emparelhamento (QR + código manual):
 
 ---
 
-## 1. Requisitos
+## 1. Instalação (sem toolchain — via Releases)
 
-- **Servidor e PC:** Linux (testado em Ubuntu 26.04), Rust estável
-  (`rustup`), `pkg-config` + libs: `libssl-dev libwayland-dev
-  libxkbcommon-dev libx11-dev libxtst-dev libpipewire-0.3-dev clang
-  libegl-dev libgl-dev` (para `enigo`/`xcap`), `playerctl` e `pactl`
-  (opcionais, para multimédia/volume), `wmctrl`/`xdotool` (opcionais,
-  para foco de janelas).
-- **Android:** JDK 17, Android SDK (platform 34, build-tools 34),
-  Gradle 8.10+ (ver `android/local.properties` para o caminho do SDK).
-- Telemóvel e PC na **mesma rede local** (a v1 privilegia ligação
-  direta; relay remoto é opt-in via `FLOWTOOLS_RELAY=1`).
+Pré-requisito: telemóvel e PC na **mesma rede local**.
 
-## 2. Arranque rápido (rede local)
+### 1.1. Servidor (no PC que queres controlar, ou outro PC da rede)
 
 ```bash
-# 1. Servidor de sessão (porta 8787 por defeito; usa PORT para mudar)
-./target/debug/flowtools-server
-# ou release:
-cargo run --release -p flowtools-server
-
-# 2. Client do PC (mostra código temporário + QR + permissões)
-./target/debug/flowtools-pc --server http://127.0.0.1:8787 --pc-name "PC de trabalho"
-
-# 3. App Android: instalar o APK de debug (ver secção 4) e emparelhar.
+sudo apt install ./flowtools-server_*_amd64.deb
+sudo systemctl enable --now flowtools-server
+curl http://127.0.0.1:8787/v1/health
+# {"ok":true,"relay_enabled":false,"version":"1.0.0"}
 ```
 
-## 3. Emparelhar (QR ou código)
+Configuração: `/etc/default/flowtools-server` (porta `PORT`, relay
+`FLOWTOOLS_RELAY`). Logs: `journalctl -u flowtools-server -f`.
+Remover: `sudo apt remove flowtools-server`
+(limpeza total: `sudo apt purge flowtools-server`).
 
-1. Corre o client do PC. Ele regista o PC e imprime:
-   - nome do PC, **código temporário de 6 dígitos** (válido 5 min, uso único),
-   - payload QR `flowtools://pair?id=…&code=…&host=…`,
-   - lista de permissões pedidas.
-2. Na app: **Início → Emparelhar PC** (ou banner "Não emparelhado").
-3. Aponta a câmara ao QR **ou** insere ID + código + endereço à mão.
-4. Desmarca as capacidades que **não** quiseres autorizar
-   (cursor, teclado, captura, browser, apps, ficheiros, notificações,
-   multimédia, sistema). Nada é obrigatório.
-5. **Autorizar selecionadas.** O token de sessão fica guardado no
-   Keystore (Android) e roda a cada ligação.
-
-Revogar: **Definições → Revogar dispositivo** (derruba sockets vivos e
-apaga o token guardado). No servidor também existe
-`POST /v1/devices/:id/revoke`.
-
-## 4. App Android — compilar e instalar
+### 1.2. Client do PC (no PC que queres controlar)
 
 ```bash
-export ANDROID_SDK_ROOT=/opt/android-sdk ANDROID_HOME=/opt/android-sdk
-export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-gradle :app:assembleDebug          # em android/
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+sudo apt install ./flowtools-pc_*_amd64.deb
+# Opcionais (multimédia/volume, clipboard, foco de janelas):
+sudo apt install playerctl pulseaudio-utils wl-clipboard xclip wmctrl
 ```
 
-Testes unitários: `gradle :app:testDebugUnitTest` (estados, permissões,
-paridade JSON com o protocolo Rust, parser do QR).
-Teste de UI (navegação): `gradle :app:connectedAndroidTest` com
-emulador/dispositivo ligado.
+O `.deb` instala o binário em `/usr/bin/flowtools-pc` e uma unidade
+**de utilizador** do systemd. Para arrancar automaticamente na sessão
+gráfica:
 
-> No emulador, o PC é alcançado em `http://10.0.2.2:8787`.
-> Num telemóvel real, usa o IP LAN do PC (ex. `http://192.168.1.5:8787`).
+```bash
+systemctl --user enable --now flowtools-pc
+journalctl --user -u flowtools-pc -f   # ver o código QR + código temporário
+```
 
-### 4.1. Gerar APKs assinados (release)
+Se o servidor não estiver no próprio PC, edita o endereço:
+`systemctl --user edit flowtools-pc` e define
+`Environment=FLOWTOOLS_SERVER=http://IP-DO-SERVIDOR:8787`,
+depois `systemctl --user restart flowtools-pc`.
 
-1. Gerar a chave (uma vez):
-   ```bash
-   keytool -genkeypair -v -keystore flowtools-release.jks -alias flowtools \
-     -keyalg RSA -keysize 2048 -validity 10000
-   ```
-   Guarda o `.jks` e as passwords **fora** do repo (nunca commitar).
-2. Criar `android/key.properties` (ignorado pelo git):
-   ```properties
-   storeFile=/caminho/para/flowtools-release.jks
-   storePassword=…
-   keyAlias=flowtools
-   keyPassword=…
-   ```
-3. Ativar a assinatura em `android/app/build.gradle.kts`
-   (bloco `signingConfigs` a ler `key.properties` + `buildTypes.release`
-   com `signingConfig = signingConfigs.getByName("release")`).
-4. Compilar e obter os artefactos:
-   ```bash
-   gradle :app:assembleRelease
-   gradle :app:bundleRelease        # AAB para a Play Store
-   ```
-   Saídas: `app/build/outputs/apk/release/app-release.apk` e
-   `app/build/outputs/bundle/release/app-release.aab`.
-5. Verificar a assinatura:
-   ```bash
-   apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk
-   ```
-6. Instalar: `adb install app-release.apk`, ou distribuir o `.aab`
-   via Play Console (assinatura da Play opcional).
+Arranque manual (ver o QR no terminal):
 
-## 5. O que a v1 faz
+```bash
+flowtools-pc --server http://127.0.0.1:8787 --pc-name "PC de trabalho"
+```
+
+Remover: `sudo apt remove flowtools-pc`.
+
+### 1.3. App Android
+
+1. Saca `app-release.apk` da Release e instala
+   (`adb install app-release.apk`, ou copia para o telemóvel e abre).
+2. Abre a app → **Emparelhar PC**.
+3. Lê o QR mostrado pelo client do PC (ou insere ID + código + endereço;
+   no telemóvel usa o **IP LAN** do PC, ex. `http://192.168.1.5:8787`).
+4. Desmarca capacidades que não quiseres autorizar e toca
+   **Autorizar selecionadas**. O token fica no Keystore e roda a cada
+   ligação. Revogar: **Definições → Revogar dispositivo**.
+
+---
+
+## 2. O que a v1 faz
 
 - **Início:** cartão do PC (nome + estado por texto e ícone), 4 ações
   rápidas (controlo remoto a **1 toque**), recentes.
@@ -152,7 +124,7 @@ emulador/dispositivo ligado.
   Não emparelhado · A ligar · Ligado · A reconectar · Offline ·
   Permissão necessária. Reconnect com backoff preserva a ferramenta.
 
-## 6. Segurança (baseline v1)
+## 3. Segurança (baseline v1)
 
 Pairing com código/QR de uso único · tokens rotativos · token Android no
 Keystore · permissões granulares por capacidade · revogação com efeito
@@ -161,34 +133,99 @@ imediato · timeout de sessão 8h · indicador visível no PC
 para desligar e para substituir ficheiros · allow-list de apps ·
 mensagens de erro PT sem detalhes técnicos (sem sockets/exceções na UI).
 
-## 7. Erros que a app mostra (e o que fazer)
+## 4. Erros que a app mostra (e o que fazer)
 
 | Mensagem | Causa provável | Ação |
 |---|---|---|
-| O PC não está disponível. | Servidor/PC offline | Verificar rede e que ambos correm |
+| O PC não está disponível. | Servidor/PC offline | Verificar rede e `systemctl` |
 | A sessão expirou. | Token rodado após reconnect | Voltar a ligar / re-emparelhar |
 | Esta ferramenta precisa de autorização. | Capacidade não aprovada | Rever permissões no pairing |
 | Código inválido. | Erro de digitação | Tentar de novo |
-| O código expirou. | Passaram 5 min | Gerar novo (reiniciar PC client) |
+| O código expirou. | Passaram 5 min | `systemctl --user restart flowtools-pc` |
 | Já existe um ficheiro com esse nome. | Duplicado no destino | Renomear antes de enviar |
 | Ficheiro demasiado grande (máx. 50 MB). | Limite da inbox | Dividir/comprimir |
 | O browser não está aberto no PC. | — | "Abrir browser no PC" |
 
-Bateria de erros executável contra um servidor local:
-`python3 /tmp/force_errors.py http://127.0.0.1:PORT`
-(24 casos: pairing, upload, tickets one-shot, WS, rotação, revogação).
-Cobriu e corrigiu: limite 2 MB do axum (agora 413 JSON limpo) e
-condição de corrida em downloads concorrentes com o mesmo nome
-(criação atómica — o primeiro ganha, o segundo recebe `file_exists`).
+---
 
-## 8. Testes (como correr)
+## 5. Desenvolver a partir do fonte
+
+### 5.1. Requisitos da toolchain
+
+- Rust estável (`rustup`), `pkg-config` + libs para `enigo`/`xcap`:
+  `libssl-dev libwayland-dev libxkbcommon-dev libx11-dev libxtst-dev
+  libpipewire-0.3-dev clang libegl-dev libgl-dev`.
+- JDK 17, Android SDK (platform 34, build-tools 34), Gradle 8.10+
+  (`android/local.properties` com `sdk.dir`).
+
+### 5.2. Correr em modo dev
 
 ```bash
-cargo test --workspace        # protocolo (6), servidor (4, incl. E2E WS), PC (7)
-gradle :app:testDebugUnitTest # Android (13): estados, permissões, JSON, QR
+cargo run -p flowtools-server                       # :8787 (PORT para mudar)
+cargo run -p flowtools-pc -- --server http://127.0.0.1:8787
+export ANDROID_SDK_ROOT=/opt/android-sdk JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+gradle :app:assembleDebug                            # em android/
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## 9. Limites conhecidos da v1
+### 5.3. Testes
+
+```bash
+cargo fmt --all --check && cargo test --workspace   # protocolo (6), servidor (4), PC (7)
+gradle :app:testDebugUnitTest                       # Android (13): estados, permissões, JSON, QR
+gradle :app:connectedAndroidTest                    # UI, com emulador/dispositivo
+```
+
+Bateria de erros contra um servidor local (24 casos: pairing, upload,
+tickets one-shot, WS, rotação, revogação) + prova de duplicados:
+`scripts/force_errors.py` (ver `scripts/README.md` se existir).
+
+### 5.4. Gerar .debs localmente
+
+```bash
+cargo install cargo-deb --locked
+cargo deb -p flowtools-pc       # target/debian/flowtools-pc_*_amd64.deb
+cargo deb -p flowtools-server
+dpkg-deb -c target/debian/*.deb # inspecionar conteúdo
+```
+
+---
+
+## 6. CI/CD e releases
+
+Workflow **CI** (`.github/workflows/ci.yml`): em cada push/PR —
+`cargo fmt --check`, `cargo test`, testes unitários Android e APK debug
+(como artefacto).
+
+Workflow **Release** (`.github/workflows/release.yml`): em cada tag
+`v*` — compila os dois `.deb`, o APK + AAB release e publica tudo na
+GitHub Release:
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+### 6.1. APK/AAB assinados no CI (uma vez)
+
+O utilizador **não** precisa disto; só quem publica releases:
+
+```bash
+keytool -genkeypair -v -keystore flowtools-release.jks -alias flowtools \
+  -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 flowtools-release.jks   # guardar o .jks fora do repo!
+gh secret set ANDROID_KEYSTORE_BASE64 --body "$(base64 -w0 flowtools-release.jks)"
+gh secret set ANDROID_KEYSTORE_PASSWORD --body "…"
+gh secret set ANDROID_KEY_ALIAS --body "flowtools"
+gh secret set ANDROID_KEY_PASSWORD --body "…"
+```
+
+Com os secrets definidos, o build de release é assinado e verificado
+com `apksigner verify`. Sem secrets, o workflow publica na mesma os
+`.deb` e o APK de debug, avisando que o release vai sem assinatura.
+Localmente, o mesmo fluxo usa `android/key.properties` (ignorado pelo
+git — ver `build.gradle.kts`).
+
+## 7. Limites conhecidos da v1
 
 - Captura e input reais exigem sessão gráfica no PC (X11/Wayland);
   em headless a sessão continua ligada mas input/frames avisam com erro
@@ -197,8 +234,10 @@ gradle :app:testDebugUnitTest # Android (13): estados, permissões, JSON, QR
 - Um PC de cada vez; um monitor (primário); sem atalhos personalizados.
 - Ficheiros só no sentido telemóvel→PC; texto do PC→telemóvel não.
 
-## 10. Roadmap (v2)
+## 8. Roadmap (v2)
 
 Relay remoto com consentimento explícito · múltiplos PCs e monitores ·
 macros/atalhos personalizados · notificações do PC · tray Tauri no
 client · histórico sincronizado · download PC→telemóvel.
+
+Licença: MIT (`LICENSE-MIT`).

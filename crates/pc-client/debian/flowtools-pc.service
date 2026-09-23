@@ -1,0 +1,16 @@
+[Unit]
+Description=FlowTools PC client (remote control agent)
+Documentation=https://github.com/Zacarias-thequimo/flowtools
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# Ponto o servidor de sessão na tua rede local (edita se necessário).
+Environment=FLOWTOOLS_SERVER=http://127.0.0.1:8787
+ExecStart=/usr/bin/flowtools-pc --server ${FLOWTOOLS_SERVER} --pc-name "PC de trabalho"
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

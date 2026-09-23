@@ -3,6 +3,9 @@
 **/*.rs.bk
 .android/
 local.properties
+key.properties
+*.jks
+*.keystore
 *.iml
 .idea/
 .gradle/

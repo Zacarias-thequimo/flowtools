@@ -1,0 +1,4 @@
+# Configuração do FlowTools session server (lida pelo systemd).
+# Descomenta e ajusta se precisares de outra porta ou relay remoto.
+#PORT=8787
+#FLOWTOOLS_RELAY=0

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Cria o utilizador de sistema do FlowTools server (idempotente).
+set -e
+if ! id flowtools >/dev/null 2>&1; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin \
+        --comment "FlowTools session server" flowtools
+fi
+#DEBHELPER#

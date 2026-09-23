@@ -2,6 +2,10 @@
 name = "flowtools-server"
 version = "0.1.0"
 edition = "2024"
+description = "FlowTools session server: pairing, auth, relay and file inbox"
+license = "MIT"
+homepage = "https://github.com/Zacarias-thequimo/flowtools"
+repository = "https://github.com/Zacarias-thequimo/flowtools"
 
 [dependencies]
 flowtools-protocol = { path = "../protocol" }
@@ -20,3 +24,18 @@ futures = "0.3"
 [dev-dependencies]
 tokio-tungstenite = "0.24"
 reqwest = { version = "0.12", features = ["json", "multipart"] }
+
+[package.metadata.deb]
+maintainer = "FlowTools <https://github.com/Zacarias-thequimo/flowtools>"
+copyright = "2026, FlowTools contributors"
+section = "net"
+priority = "optional"
+extended-description = """\
+Sessão e encaminhamento do FlowTools: pairing por QR/código, autenticação,
+relay WebSocket e inbox de ficheiros. Corre como serviço de sistema."""
+maintainer-scripts = "debian"
+assets = [
+    "$auto",
+    ["debian/flowtools-server.service", "lib/systemd/system/flowtools-server.service", "644"],
+    ["debian/flowtools-server.default", "etc/default/flowtools-server", "644"],
+]

@@ -251,18 +251,48 @@ impl Default for ViewportMode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerEvent {
-    Ack { ok: bool, message: String },
-    State { state: SessionState },
+    Ack {
+        ok: bool,
+        message: String,
+    },
+    State {
+        state: SessionState,
+    },
     /// Rotating session token: client must replace the old token.
-    Token { token: String },
-    Frame { viewport: ViewportMode, jpeg_base64: String, seq: u64 },
-    MediaState { playing: bool, volume: u8 },
-    AppList { running: Vec<AppInfo>, allowed: Vec<AppInfo> },
-    FileProgress { name: String, done_bytes: u64, total_bytes: u64 },
-    FileDone { name: String, destination: String },
+    Token {
+        token: String,
+    },
+    Frame {
+        viewport: ViewportMode,
+        jpeg_base64: String,
+        seq: u64,
+    },
+    MediaState {
+        playing: bool,
+        volume: u8,
+    },
+    AppList {
+        running: Vec<AppInfo>,
+        allowed: Vec<AppInfo>,
+    },
+    FileProgress {
+        name: String,
+        done_bytes: u64,
+        total_bytes: u64,
+    },
+    FileDone {
+        name: String,
+        destination: String,
+    },
     /// A phone uploaded a file for this PC (ticket one-shot download).
-    FileReady { ticket: String, name: String, size_bytes: u64 },
-    Error { code: UserErrorCode },
+    FileReady {
+        ticket: String,
+        name: String,
+        size_bytes: u64,
+    },
+    Error {
+        code: UserErrorCode,
+    },
     Pong,
 }
 
@@ -329,8 +359,9 @@ mod tests {
 
     #[test]
     fn granular_permissions_are_subset_checked() {
-        let granted: HashSet<Capability> =
-            [Capability::Cursor, Capability::Media].into_iter().collect();
+        let granted: HashSet<Capability> = [Capability::Cursor, Capability::Media]
+            .into_iter()
+            .collect();
         assert!(has_capability(&granted, Capability::Cursor));
         assert!(!has_capability(&granted, Capability::Files));
         let missing = missing_capabilities(&granted, &[Capability::Cursor, Capability::Files]);
