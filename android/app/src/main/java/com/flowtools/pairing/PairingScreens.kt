@@ -11,6 +11,8 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -50,39 +52,51 @@ fun QrScannerView(onCode: (String) -> Unit, modifier: Modifier = Modifier) {
     val scanner = remember { BarcodeScanning.getClient() }
     var providerRef by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var lastAt by remember { mutableLongStateOf(0L) }
+    var cameraError by remember { mutableStateOf(false) }
+    if (cameraError) {
+        Text(
+            "Câmara indisponível neste dispositivo. Insira o código do PC abaixo.",
+            modifier = modifier,
+        )
+        return
+    }
     AndroidView(
         factory = { ctx ->
             val previewView = PreviewView(ctx)
             ProcessCameraProvider.getInstance(ctx).addListener({
-                val provider = ProcessCameraProvider.getInstance(ctx).get()
-                providerRef = provider
-                val preview = Preview.Builder().build()
-                preview.setSurfaceProvider(previewView.surfaceProvider)
-                val analysis = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-                    .also { ia ->
-                        ia.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { proxy ->
-                            val media = proxy.image
-                            if (media == null) {
-                                proxy.close()
-                            } else {
-                                val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
-                                scanner.process(image)
-                                    .addOnSuccessListener { barcodes ->
-                                        val now = SystemClock.elapsedRealtime()
-                                        val raw = barcodes.firstOrNull()?.rawValue
-                                        if (raw != null && now - lastAt > 1500) {
-                                            lastAt = now
-                                            onCode(raw)
+                try {
+                    val provider = ProcessCameraProvider.getInstance(ctx).get()
+                    providerRef = provider
+                    val preview = Preview.Builder().build()
+                    preview.setSurfaceProvider(previewView.surfaceProvider)
+                    val analysis = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .build()
+                        .also { ia ->
+                            ia.setAnalyzer(ContextCompat.getMainExecutor(ctx)) { proxy ->
+                                val media = proxy.image
+                                if (media == null) {
+                                    proxy.close()
+                                } else {
+                                    val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
+                                    scanner.process(image)
+                                        .addOnSuccessListener { barcodes ->
+                                            val now = SystemClock.elapsedRealtime()
+                                            val raw = barcodes.firstOrNull()?.rawValue
+                                            if (raw != null && now - lastAt > 1500) {
+                                                lastAt = now
+                                                onCode(raw)
+                                            }
                                         }
-                                    }
-                                    .addOnCompleteListener { proxy.close() }
+                                        .addOnCompleteListener { proxy.close() }
+                                }
                             }
                         }
-                    }
-                provider.unbindAll()
-                provider.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                    provider.unbindAll()
+                    provider.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                } catch (_: Exception) {
+                    cameraError = true
+                }
             }, ContextCompat.getMainExecutor(ctx))
             previewView
         },
@@ -104,7 +118,7 @@ fun PairingFlow(
     var manualCode by remember { mutableStateOf("") }
     var manualHost by remember { mutableStateOf("http://192.168.1.5:8787") }
 
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Emparelhar PC", style = MaterialTheme.typography.headlineSmall)
         when (val s = state) {
             is PairUiState.Idle -> {

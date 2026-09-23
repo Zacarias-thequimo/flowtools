@@ -16,6 +16,23 @@ Três componentes:
 Especificação visual e funcional: `flowtools-ui-ux.md` e
 `flowtools-ui-spec.json`. Conceito visual: `flowtools-ui-concept.png`.
 
+## Ecrãs (capturas reais em Redroid 720×1280)
+
+| Início | Controlo remoto | Ferramentas |
+|---|---|---|
+| ![Início](docs/screenshots/inicio.png) | ![Controlo remoto](docs/screenshots/controlo-remoto.png) | ![Ferramentas](docs/screenshots/ferramentas.png) |
+
+| Texto rápido | Ficheiros | Atalhos |
+|---|---|---|
+| ![Texto rápido](docs/screenshots/texto-rapido.png) | ![Ficheiros](docs/screenshots/ficheiros.png) | ![Atalhos](docs/screenshots/atalhos.png) |
+
+| Browser remoto (9:16) | Aplicações do PC | Definições |
+|---|---|---|
+| ![Browser remoto](docs/screenshots/browser-remoto.png) | ![Aplicações do PC](docs/screenshots/aplicacoes-pc.png) | ![Definições](docs/screenshots/definicoes.png) |
+
+Emparelhamento (QR + código manual):
+![Emparelhar](docs/screenshots/emparelhar.png)
+
 ---
 
 ## 1. Requisitos

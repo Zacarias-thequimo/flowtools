@@ -36,6 +36,30 @@ class SessionStore(private val ctx: Context) {
         )
     }
 
+    // In-memory fallback if the Keystore is unavailable (broken keystore
+    // must never crash the app; token just won't survive a restart).
+    private val memFallback = HashMap<String, String?>()
+
+    private fun readToken(): String? =
+        runCatching { secure.getString("session_token", null) }.getOrNull()
+            ?: memFallback["session_token"]
+
+    private fun writeToken(value: String?) {
+        val ok = runCatching {
+            secure.edit().putString("session_token", value).apply()
+            true
+        }.getOrDefault(false)
+        if (!ok) memFallback["session_token"] = value
+    }
+
+    private fun removeToken() {
+        val ok = runCatching {
+            secure.edit().remove("session_token").apply()
+            true
+        }.getOrDefault(false)
+        if (!ok) memFallback.remove("session_token")
+    }
+
     private val _token = MutableStateFlow<String?>(null)
     val token: StateFlow<String?> = _token.asStateFlow()
 
@@ -46,11 +70,11 @@ class SessionStore(private val ctx: Context) {
     val retainText: Flow<Boolean> = ctx.prefs.data.map { it[RETAIN_TEXT] ?: false }
 
     fun loadToken() {
-        _token.value = secure.getString("session_token", null)
+        _token.value = readToken()
     }
 
     suspend fun saveSession(serverUrl: String, pcId: String, pcName: String, token: String) {
-        secure.edit().putString("session_token", token).apply()
+        writeToken(token)
         _token.value = token
         ctx.prefs.edit { prefs ->
             prefs[SERVER_URL] = serverUrl
@@ -68,7 +92,7 @@ class SessionStore(private val ctx: Context) {
     }
 
     suspend fun clearSession() {
-        secure.edit().remove("session_token").apply()
+        removeToken()
         _token.value = null
         ctx.prefs.edit { prefs ->
             prefs.remove(PC_ID)

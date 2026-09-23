@@ -1,6 +1,8 @@
 package com.flowtools.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -19,7 +21,7 @@ fun BrowserScreen(
     onOpenBrowserOnPc: () -> Unit,
     frame: android.graphics.Bitmap? = null,
 ) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Browser remoto", style = MaterialTheme.typography.headlineSmall)
         // Address bar: back / forward / reload / field (collapsible in full impl)
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -62,7 +64,7 @@ fun AppsScreen(
     toolbarCollapsed: Boolean,
     onToggleToolbar: () -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Aplicações do PC", style = MaterialTheme.typography.headlineSmall)
         OutlinedTextField(value = query, onValueChange = onQuery, placeholder = { Text("Pesquisar aplicações") }, modifier = Modifier.fillMaxWidth())
         Text("Abertas agora", style = MaterialTheme.typography.titleSmall)
@@ -101,7 +103,7 @@ fun AppsScreen(
 
 @Composable
 fun QuickTextScreen(text: String, onText: (String) -> Unit, target: String, onTarget: (String) -> Unit, onSend: () -> Unit, history: List<String>, onReuse: (String) -> Unit, onDelete: (String) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Texto rápido", style = MaterialTheme.typography.headlineSmall)
         OutlinedTextField(value = text, onValueChange = onText, placeholder = { Text("Escreva ou cole aqui") }, minLines = 4, modifier = Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -132,7 +134,7 @@ fun ShortcutsScreen(onRun: (String) -> Unit) {
         "Edição" to listOf("ctrl_c", "ctrl_v", "ctrl_z"),
         "Sistema" to listOf("lock", "print"),
     )
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Atalhos", style = MaterialTheme.typography.headlineSmall)
         cats.forEach { (cat, items) ->
             Text(cat, style = MaterialTheme.typography.titleSmall)
@@ -147,7 +149,7 @@ fun ShortcutsScreen(onRun: (String) -> Unit) {
 
 @Composable
 fun FilesScreen(progress: Float?, onSend: () -> Unit, onCancel: () -> Unit, error: String?, destination: String? = null) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Ficheiros", style = MaterialTheme.typography.headlineSmall)
         Button(onClick = onSend, modifier = Modifier.height(48.dp)) { Text("Enviar ficheiro para o PC") }
         if (progress != null) {
@@ -162,7 +164,7 @@ fun FilesScreen(progress: Float?, onSend: () -> Unit, onCancel: () -> Unit, erro
 
 @Composable
 fun PairingScreen(code: String, qr: String, permissions: List<String>, onApprove: () -> Unit) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Emparelhar PC", style = MaterialTheme.typography.headlineSmall)
         Text("QR: $qr", style = MaterialTheme.typography.bodyMedium)
         Text("Código temporário: $code", style = MaterialTheme.typography.headlineMedium)
@@ -174,7 +176,7 @@ fun PairingScreen(code: String, qr: String, permissions: List<String>, onApprove
 
 @Composable
 fun SettingsScreen(onRevoke: () -> Unit, haptics: Boolean, onHaptics: (Boolean) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Definições", style = MaterialTheme.typography.headlineSmall)
         Text("Ligação", style = MaterialTheme.typography.titleSmall)
         Text("Vista remota: 9:16, Ajustar ao telemóvel (predefinição)")
