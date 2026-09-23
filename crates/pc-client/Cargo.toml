@@ -17,3 +17,7 @@ reqwest = { version = "0.12", features = ["json"] }
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
 futures-util = "0.3"
 clap = { version = "4", features = ["derive"] }
+enigo = "0.6.1"
+xcap = "0.9.8"
+image = "0.25.10"
+base64 = "0.23.1"

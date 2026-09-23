@@ -252,6 +252,8 @@ impl Default for ViewportMode {
 pub enum ServerEvent {
     Ack { ok: bool, message: String },
     State { state: SessionState },
+    /// Rotating session token: client must replace the old token.
+    Token { token: String },
     Frame { viewport: ViewportMode, jpeg_base64: String, seq: u64 },
     MediaState { playing: bool, volume: u8 },
     AppList { running: Vec<AppInfo>, allowed: Vec<AppInfo> },

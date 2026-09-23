@@ -17,6 +17,7 @@ fun BrowserScreen(
     onViewportMode: (String) -> Unit,
     browserOpen: Boolean,
     onOpenBrowserOnPc: () -> Unit,
+    frame: android.graphics.Bitmap? = null,
 ) {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Browser remoto", style = MaterialTheme.typography.headlineSmall)
@@ -34,9 +35,12 @@ fun BrowserScreen(
         if (!browserOpen) {
             Button(onClick = onOpenBrowserOnPc, modifier = Modifier.height(48.dp)) { Text("Abrir browser no PC") }
         } else {
-            RemoteViewport(mode = viewportMode, onModeChange = onViewportMode) {
-                Text("Vista remota 9:16 — Ajustar ao telemóvel", style = MaterialTheme.typography.bodySmall)
+            val mode = when (viewportMode) {
+                "Ampliar" -> com.flowtools.session.ViewportMode.Zoom
+                "Desktop" -> com.flowtools.session.ViewportMode.Desktop
+                else -> com.flowtools.session.ViewportMode.FitPhone
             }
+            com.flowtools.remoteview.FrameView(bitmap = frame, mode = mode)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             IconButton(onClick = {}, modifier = Modifier.size(48.dp)) { Icon(Icons.Filled.Tab, contentDescription = "Separadores") }

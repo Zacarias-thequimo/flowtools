@@ -78,17 +78,54 @@ class MainActivity : ComponentActivity() {
                             }, query = q, onQuery = { q = it })
                         }
                         composable(Routes.REMOTE) {
-                            var vol by remember { mutableStateOf(0.5f) }
+                            val vm: com.flowtools.session.RemoteViewModel = viewModel()
+                            val vol by vm.volume.collectAsState()
                             RemoteScreen(
-                                state, pcName, vol, onVolume = { vol = it },
-                                onCursor = { _, _ -> }, onClick = {}, onScroll = { _, _ -> },
-                                onMedia = {}, onLock = {}, onShutdown = {},
+                                state, pcName, vol, onVolume = vm::setVolume,
+                                onCursor = vm::cursor,
+                                onClick = { vm.click() },
+                                onScroll = vm::scroll,
+                                onMedia = {
+                                    when (it) {
+                                        "previous" -> vm.media(com.flowtools.session.MediaAction.Previous)
+                                        "next" -> vm.media(com.flowtools.session.MediaAction.Next)
+                                        else -> vm.media(com.flowtools.session.MediaAction.PlayPause)
+                                    }
+                                },
+                                onLock = vm::lock,
+                                onShutdown = { vm.shutdown(true) },
                             )
                         }
                         composable(Routes.BROWSER) {
+                            val vm: com.flowtools.session.RemoteViewModel = viewModel()
                             var url by remember { mutableStateOf("") }
                             var mode by remember { mutableStateOf("Ajustar ao telemóvel") }
-                            BrowserScreen(url, onUrl = { url = it }, onNavigate = {}, viewportMode = mode, onViewportMode = { mode = it }, browserOpen = true, onOpenBrowserOnPc = {})
+                            val frame by vm.frame.collectAsState()
+                            BrowserScreen(
+                                url, onUrl = { url = it },
+                                onNavigate = {
+                                    when (it) {
+                                        "back" -> vm.browserAction(com.flowtools.session.BrowserAction.Back)
+                                        "forward" -> vm.browserAction(com.flowtools.session.BrowserAction.Forward)
+                                        "reload" -> vm.browserAction(com.flowtools.session.BrowserAction.Reload)
+                                        else -> if (url.isNotBlank()) vm.browserNavigate(url)
+                                    }
+                                },
+                                viewportMode = mode,
+                                onViewportMode = {
+                                    mode = it
+                                    vm.setViewport(
+                                        when (it) {
+                                            "Ampliar" -> com.flowtools.session.ViewportMode.Zoom
+                                            "Desktop" -> com.flowtools.session.ViewportMode.Desktop
+                                            else -> com.flowtools.session.ViewportMode.FitPhone
+                                        },
+                                    )
+                                },
+                                browserOpen = true,
+                                onOpenBrowserOnPc = { vm.browserAction(com.flowtools.session.BrowserAction.OpenBrowser) },
+                                frame = frame,
+                            )
                         }
                         composable(Routes.APPS) {
                             var q by remember { mutableStateOf("") }

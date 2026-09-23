@@ -43,6 +43,12 @@ class ConnectionManager(
 
     fun requirePermission() { _state.value = ConnectionState.PermissionRequired }
 
+    /** Server confirmed the session (WS State event). Keeps granted set. */
+    fun markConnected() {
+        reconnectJob?.cancel()
+        _state.value = ConnectionState.Connected
+    }
+
     fun revoke() {
         reconnectJob?.cancel()
         granted = emptySet()
