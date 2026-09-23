@@ -86,10 +86,11 @@ jobs:
         run: gradle :app:assembleRelease :app:bundleRelease
       - name: Verify signature
         run: |
-          [ -f app/build/outputs/apk/release/app-release.apk ] || { echo "sem APK release"; exit 1; }
+          set -o pipefail
           APK=app/build/outputs/apk/release/app-release.apk
+          [ -f "$APK" ] || { echo "sem APK release"; exit 1; }
           if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            apksigner verify --print-certs "$APK" | head -n 3
+            "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
           else
             echo "ATENCAO: sem secrets de assinatura — APK release NAO assinado (instala o debug)."
           fi
