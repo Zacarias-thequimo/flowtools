@@ -161,6 +161,7 @@ pub struct SessionToken {
     pub session_id: String,
     pub device_id: String,
     pub pc_id: String,
+    pub pc_name: String,
     pub token: String,
     pub granted: HashSet<Capability>,
     pub expires_at_unix: i64,
@@ -259,6 +260,8 @@ pub enum ServerEvent {
     AppList { running: Vec<AppInfo>, allowed: Vec<AppInfo> },
     FileProgress { name: String, done_bytes: u64, total_bytes: u64 },
     FileDone { name: String, destination: String },
+    /// A phone uploaded a file for this PC (ticket one-shot download).
+    FileReady { ticket: String, name: String, size_bytes: u64 },
     Error { code: UserErrorCode },
     Pong,
 }
@@ -279,6 +282,7 @@ pub enum UserErrorCode {
     InvalidCode,
     ExpiredSession,
     FileExists,
+    TooLarge,
     TransferCancelled,
     BrowserClosed,
     Unknown,
@@ -292,6 +296,7 @@ impl UserErrorCode {
             UserErrorCode::InvalidCode => "Código inválido. Tente novamente.",
             UserErrorCode::ExpiredSession => "A sessão expirou. Volte a ligar.",
             UserErrorCode::FileExists => "Já existe um ficheiro com esse nome.",
+            UserErrorCode::TooLarge => "Ficheiro demasiado grande (máx. 50 MB).",
             UserErrorCode::TransferCancelled => "Transferência cancelada.",
             UserErrorCode::BrowserClosed => "O browser não está aberto no PC.",
             UserErrorCode::Unknown => "Algo correu mal. Tente novamente.",

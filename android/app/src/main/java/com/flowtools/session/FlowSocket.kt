@@ -110,6 +110,7 @@ class FlowSocket(
                                         UserErrorCode.InvalidCode -> "Código inválido. Tente novamente."
                                         UserErrorCode.ExpiredSession -> "A sessão expirou. Volte a ligar."
                                         UserErrorCode.FileExists -> "Já existe um ficheiro com esse nome."
+                                        UserErrorCode.TooLarge -> "Ficheiro demasiado grande (máx. 50 MB)."
                                         UserErrorCode.TransferCancelled -> "Transferência cancelada."
                                         UserErrorCode.BrowserClosed -> "O browser não está aberto no PC."
                                         UserErrorCode.Unknown -> "Algo correu mal. Tente novamente."

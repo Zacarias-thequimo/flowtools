@@ -202,6 +202,107 @@ fn ack(ok: bool, message: &str) -> String {
     serde_json::to_string(&ServerEvent::Ack { ok, message: message.into() }).unwrap()
 }
 
+/// Keep only a safe file name (no directories, no traversal).
+fn safe_file_name(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or("ficheiro");
+    let clean: String = base
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | ' ' | '(' | ')') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let clean = clean.trim().trim_matches('.');
+    if clean.is_empty() {
+        "ficheiro".into()
+    } else {
+        clean.chars().take(128).collect()
+    }
+}
+
+fn download_dir() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    std::path::Path::new(&home).join("Downloads").join("FlowTools")
+}
+
+async fn download_file(
+    http: reqwest::Client,
+    server: String,
+    pc_id: String,
+    ticket: String,
+    name: String,
+    size: u64,
+    out: tokio::sync::mpsc::UnboundedSender<String>,
+) {
+    let send = |ev: ServerEvent| {
+        let _ = out.send(serde_json::to_string(&ev).unwrap());
+    };
+    let name = safe_file_name(&name);
+    let dir = download_dir();
+    if std::fs::create_dir_all(&dir).is_err() {
+        send(ServerEvent::Error { code: UserErrorCode::Unknown });
+        return;
+    }
+    let path = dir.join(&name);
+    // Atomic create-new: two concurrent downloads of the same name cannot
+    // both pass the check (TOCTOU). Never overwrite without confirmation.
+    let file = match tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .await
+    {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            send(ServerEvent::Error { code: UserErrorCode::FileExists });
+            return;
+        }
+        Err(_) => {
+            send(ServerEvent::Error { code: UserErrorCode::Unknown });
+            return;
+        }
+    };
+    let resp = match http
+        .get(format!("{server}/v1/files/inbox/{ticket}?pc_id={pc_id}"))
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => r,
+        _ => {
+            send(ServerEvent::Error { code: UserErrorCode::Unknown });
+            return;
+        }
+    };
+    let mut file = file;
+    use tokio::io::AsyncWriteExt as _;
+    let mut done: u64 = 0;
+    let mut stream = resp.bytes_stream();
+    use futures_util::StreamExt as _;
+    while let Some(chunk) = stream.next().await {
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(_) => {
+                send(ServerEvent::Error { code: UserErrorCode::TransferCancelled });
+                let _ = tokio::fs::remove_file(&path).await;
+                return;
+            }
+        };
+        if file.write_all(&chunk).await.is_err() {
+            send(ServerEvent::Error { code: UserErrorCode::Unknown });
+            return;
+        }
+        done += chunk.len() as u64;
+        send(ServerEvent::FileProgress { name: name.clone(), done_bytes: done, total_bytes: size });
+    }
+    send(ServerEvent::FileDone {
+        name: name.clone(),
+        destination: format!("~/Downloads/FlowTools/{name}"),
+    });
+}
+
 // ------------------------------ event loop ---------------------------------
 
 struct Runtime {
@@ -398,6 +499,7 @@ async fn capture_loop(
 }
 
 async fn connect_and_run(server: &str, pc_id: &str) -> anyhow::Result<bool> {
+    let http = reqwest::Client::new();
     let ws_url = server.replacen("http", "ws", 1) + &format!("/v1/pc/channel?pc_id={pc_id}");
     let (ws, _) = connect_async(&ws_url).await.map_err(|e| anyhow::anyhow(format!("ws: {e}")))?;
     session_indicator(true, pc_id);
@@ -453,7 +555,24 @@ async fn connect_and_run(server: &str, pc_id: &str) -> anyhow::Result<bool> {
                     break;
                 }
             }
-            Err(_) => rt.send_ack(false, "Evento inválido."),
+            Err(_) => {
+                // Server-initiated messages (e.g. file ready for download).
+                if let Ok(ServerEvent::FileReady { ticket, name, size_bytes }) =
+                    serde_json::from_str::<ServerEvent>(&text)
+                {
+                    tokio::spawn(download_file(
+                        http.clone(),
+                        server.to_owned(),
+                        pc_id.to_owned(),
+                        ticket,
+                        name,
+                        size_bytes,
+                        rt.out.clone(),
+                    ));
+                } else {
+                    rt.send_ack(false, "Evento inválido.");
+                }
+            }
         }
     }
 
@@ -592,5 +711,24 @@ mod tests {
         let q = "ola mundo&";
         let enc: String = url::form_urlencoded::byte_serialize(q.as_bytes()).collect();
         assert_eq!(enc, "ola+mundo%26");
+    }
+
+    #[test]
+    fn file_names_are_sanitized() {
+        assert_eq!(safe_file_name("../../etc/passwd"), "passwd");
+        assert_eq!(safe_file_name("nota final (2).pdf"), "nota final (2).pdf");
+        assert_eq!(safe_file_name("..."), "ficheiro");
+    }
+
+    #[tokio::test]
+    async fn concurrent_same_name_cannot_overwrite() {
+        let dir = std::env::temp_dir().join(format!("flowtools-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("dup.txt");
+        let first = tokio::fs::OpenOptions::new().write(true).create_new(true).open(&path).await;
+        assert!(first.is_ok());
+        let second = tokio::fs::OpenOptions::new().write(true).create_new(true).open(&path).await;
+        assert_eq!(second.unwrap_err().kind(), std::io::ErrorKind::AlreadyExists);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

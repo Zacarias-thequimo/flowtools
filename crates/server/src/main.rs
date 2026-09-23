@@ -31,6 +31,8 @@ use uuid::Uuid;
 
 const CODE_TTL_SECS: u64 = 300;
 const SESSION_TTL_SECS: i64 = 3600 * 8; // configurable session timeout
+const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
+const FILE_TTL_SECS: u64 = 3600;
 
 #[derive(Clone)]
 struct AppState {
@@ -46,6 +48,15 @@ struct Store {
     known_pcs: HashSet<String>,
     /// Live routing: pc_id -> senders (to PC, to each Android client by token).
     links: HashMap<String, PcLink>,
+    /// One-shot file inbox: ticket -> file (phone -> PC).
+    files: HashMap<String, StoredFile>,
+}
+
+struct StoredFile {
+    name: String,
+    bytes: Vec<u8>,
+    pc_id: String,
+    created_unix: u64,
 }
 
 #[derive(Default)]
@@ -168,6 +179,7 @@ async fn pair_claim(
         session_id: Uuid::new_v4().to_string(),
         device_id: device_id.clone(),
         pc_id: stored.request.pc_id.clone(),
+        pc_name: stored.request.pc_name.clone(),
         token: token.clone(),
         granted: claim.approved.clone(),
         expires_at_unix: now_unix() as i64 + SESSION_TTL_SECS,
@@ -242,6 +254,134 @@ async fn session_state(
         "message": state.user_message(),
         "relay_enabled": s.relay_enabled,
     }))
+}
+
+// --------------------------- File inbox ------------------------------------
+// Phone -> PC: multipart upload (token + file), one-shot ticket download.
+
+fn valid_session(store: &Store, token: &str) -> Option<SessionToken> {
+    let sess = store.sessions.get(token)?;
+    if store.revoked_devices.contains(&sess.device_id) {
+        return None;
+    }
+    if (sess.expires_at_unix as u64) < now_unix() {
+        return None;
+    }
+    Some(sess.clone())
+}
+
+async fn inbox_upload(
+    State(s): State<AppState>,
+    mut mp: axum::extract::Multipart,
+) -> impl IntoResponse {
+    let mut token: Option<String> = None;
+    let mut name: Option<String> = None;
+    let mut bytes: Option<Vec<u8>> = None;
+    while let Ok(Some(field)) = mp.next_field().await {
+        match field.name().unwrap_or("") {
+            "token" => token = field.text().await.ok(),
+            "file" => {
+                name = field.file_name().map(|n| n.to_owned());
+                bytes = field.bytes().await.ok().map(|b| b.to_vec());
+            }
+            _ => {}
+        }
+    }
+    let (token, name, bytes) = match (token, name, bytes) {
+        (Some(t), Some(n), Some(b)) => (t, n, b),
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": UserErrorCode::Unknown})),
+            )
+        }
+    };
+    if bytes.len() > MAX_FILE_BYTES {
+        return (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            Json(serde_json::json!({"error": UserErrorCode::TooLarge})),
+        );
+    }
+    // Sweep expired tickets opportunistically.
+    let mut w = s.inner.write().await;
+    w.files.retain(|_, f| now_unix().saturating_sub(f.created_unix) <= FILE_TTL_SECS);
+    let sess = match valid_session(&w, &token) {
+        Some(sess) => sess,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({"error": UserErrorCode::ExpiredSession})),
+            )
+        }
+    };
+    if !sess.granted.contains(&Capability::Files) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": UserErrorCode::PermissionNeeded})),
+        );
+    }
+    let ticket = Uuid::new_v4().to_string();
+    let size = bytes.len() as u64;
+    w.files.insert(
+        ticket.clone(),
+        StoredFile { name: name.clone(), bytes, pc_id: sess.pc_id.clone(), created_unix: now_unix() },
+    );
+    // Notify the PC channel (frames-style fan-out of one).
+    if let Some(link) = w.links.get(&sess.pc_id) {
+        if let Some(pc) = &link.pc_tx {
+            let ev = ServerEvent::FileReady { ticket: ticket.clone(), name: name.clone(), size_bytes: size };
+            let _ = pc.send(serde_json::to_string(&ev).unwrap());
+        }
+    }
+    info!(ticket, name, size, "file inbox upload");
+    (
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "ticket": ticket,
+            "name": name,
+            "size_bytes": size,
+            "destination": "~/Downloads/FlowTools",
+        })),
+    )
+}
+
+#[derive(Deserialize)]
+struct InboxQuery {
+    pc_id: Option<String>,
+}
+
+async fn inbox_download(
+    State(s): State<AppState>,
+    Path(ticket): Path<String>,
+    Query(q): Query<InboxQuery>,
+) -> axum::response::Response {
+    use axum::http::{header, HeaderMap, HeaderValue};
+    let mut w = s.inner.write().await;
+    let stored = match w.files.remove(&ticket) {
+        Some(f) => f,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": UserErrorCode::Unknown})),
+            )
+                .into_response();
+        }
+    };
+    if q.pc_id.as_deref() != Some(stored.pc_id.as_str()) {
+        // Put it back: wrong PC must not burn someone else's ticket.
+        w.files.insert(ticket, stored);
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": UserErrorCode::PermissionNeeded})),
+        )
+            .into_response();
+    }
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
+    if let Ok(v) = HeaderValue::from_str(&stored.name) {
+        headers.insert("x-file-name", v);
+    }
+    (StatusCode::OK, headers, stored.bytes).into_response()
 }
 
 // ------------------------- Android WebSocket -------------------------------
@@ -457,6 +597,11 @@ fn app(state: AppState) -> Router {
         .route("/v1/session/state", get(session_state))
         .route("/v1/session/ws", get(ws_handler))
         .route("/v1/pc/channel", get(pc_handler))
+        .route("/v1/files/inbox", post(inbox_upload))
+        .route("/v1/files/inbox/:ticket", get(inbox_download))
+        // Disable axum's default 2MB body cap: the inbox handler enforces its
+        // own 50MB limit and answers oversized uploads with clean JSON 413.
+        .layer(axum::extract::DefaultBodyLimit::disable())
         .with_state(state)
         .layer(tower_http::cors::CorsLayer::permissive())
 }
@@ -609,5 +754,75 @@ mod tests {
         let (mut android2, _) = tokio_tungstenite::connect_async(format!("{ws_base}/v1/session/ws?token={new_token}"))
             .await.unwrap();
         assert!(next_text(&mut android2).await.contains("connected"));
+    }
+
+    #[tokio::test]
+    async fn file_inbox_upload_notifies_pc_and_downloads_once() {
+        let base = spawn_test_server().await;
+        let http = reqwest::Client::new();
+        let ws_base = base.replacen("http", "ws", 1);
+
+        async fn pair_with(http: &reqwest::Client, base: &str, approved: HashSet<Capability>) -> SessionToken {
+            let challenge: PairChallenge = http
+                .post(format!("{base}/v1/pair/start"))
+                .json(&PairRequest {
+                    pc_name: "PC".into(),
+                    pc_id: "pc-files".into(),
+                    offered: Capability::all().into_iter().collect(),
+                    local_only: true,
+                })
+                .send().await.unwrap()
+                .json().await.unwrap();
+            http.post(format!("{base}/v1/pair/claim"))
+                .json(&PairClaim {
+                    pairing_id: challenge.pairing_id,
+                    code: challenge.code,
+                    device_name: "Pixel".into(),
+                    approved,
+                })
+                .send().await.unwrap()
+                .json().await.unwrap()
+        }
+
+        // Without Files capability the upload is refused.
+        let no_files = pair_with(&http, &base, [Capability::Cursor].into_iter().collect()).await;
+        let denied = http.post(format!("{base}/v1/files/inbox"))
+            .multipart(
+                reqwest::multipart::Form::new()
+                    .text("token", no_files.token)
+                    .part("file", reqwest::multipart::Part::bytes(b"hello".to_vec()).file_name("a.txt")),
+            )
+            .send().await.unwrap();
+        assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+
+        // With Files capability: upload ok, PC gets FileReady, one-shot download.
+        let session = pair_with(&http, &base, [Capability::Files].into_iter().collect()).await;
+        let (mut pc, _) = tokio_tungstenite::connect_async(format!("{ws_base}/v1/pc/channel?pc_id=pc-files"))
+            .await.unwrap();
+        let body = http.post(format!("{base}/v1/files/inbox"))
+            .multipart(
+                reqwest::multipart::Form::new()
+                    .text("token", session.token)
+                    .part("file", reqwest::multipart::Part::bytes(b"hello-flow".to_vec()).file_name("nota.txt")),
+            )
+            .send().await.unwrap();
+        assert_eq!(body.status(), StatusCode::CREATED);
+        let v: serde_json::Value = body.json().await.unwrap();
+        let ticket = v["ticket"].as_str().unwrap().to_owned();
+        assert_eq!(v["destination"], "~/Downloads/FlowTools");
+
+        let ready = next_text(&mut pc).await;
+        assert!(ready.contains("file_ready") && ready.contains(&ticket));
+
+        let dl = http.get(format!("{base}/v1/files/inbox/{ticket}?pc_id=pc-files"))
+            .send().await.unwrap();
+        assert_eq!(dl.status(), StatusCode::OK);
+        assert_eq!(dl.headers()["x-file-name"], "nota.txt");
+        assert_eq!(dl.bytes().await.unwrap().as_ref(), b"hello-flow");
+
+        // One-shot: second download is gone.
+        let gone = http.get(format!("{base}/v1/files/inbox/{ticket}?pc_id=pc-files"))
+            .send().await.unwrap();
+        assert_eq!(gone.status(), StatusCode::NOT_FOUND);
     }
 }

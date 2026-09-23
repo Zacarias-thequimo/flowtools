@@ -101,6 +101,9 @@ sealed interface ServerEvent {
     @Serializable @SerialName("file_done")
     data class FileDone(val name: String, val destination: String) : ServerEvent
 
+    @Serializable @SerialName("file_ready")
+    data class FileReady(val ticket: String, val name: String, val size_bytes: Long) : ServerEvent
+
     @Serializable @SerialName("error")
     data class Error(val code: UserErrorCode) : ServerEvent
 
@@ -125,6 +128,7 @@ enum class UserErrorCode {
     @SerialName("invalid_code") InvalidCode,
     @SerialName("expired_session") ExpiredSession,
     @SerialName("file_exists") FileExists,
+    @SerialName("too_large") TooLarge,
     @SerialName("transfer_cancelled") TransferCancelled,
     @SerialName("browser_closed") BrowserClosed,
     @SerialName("unknown") Unknown,

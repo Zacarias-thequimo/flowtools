@@ -146,14 +146,16 @@ fun ShortcutsScreen(onRun: (String) -> Unit) {
 }
 
 @Composable
-fun FilesScreen(progress: Float?, onSend: () -> Unit, onCancel: () -> Unit, error: String?) {
+fun FilesScreen(progress: Float?, onSend: () -> Unit, onCancel: () -> Unit, error: String?, destination: String? = null) {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Ficheiros", style = MaterialTheme.typography.headlineSmall)
         Button(onClick = onSend, modifier = Modifier.height(48.dp)) { Text("Enviar ficheiro para o PC") }
         if (progress != null) {
             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+            Text("A enviar… ${(progress * 100).toInt()}%")
             OutlinedButton(onClick = onCancel, modifier = Modifier.height(48.dp)) { Text("Cancelar transferência") }
         }
+        destination?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
 }
